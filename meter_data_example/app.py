@@ -1,5 +1,6 @@
 import pymortar
 import os
+import pandas as pd
 
 # use default values (environment variables):
 # MORTAR_API_ADDRESS: mortardata.org:9001
@@ -7,7 +8,7 @@ import os
 # MORTAR_API_PASSWORD: required
 client = pymortar.Client({})
 
-meter_query = "SELECT ?meter WHERE { ?meter rdf:type/rdfs:subClassOf* brick:Electric_Meter };"
+meter_query = "SELECT ?meter WHERE { ?meter rdf:type/rdfs:subClassOf* brick:Building_Electric_Meter };"
 
 # run qualify stage to get list of sites with electric meters
 resp = client.qualify([meter_query])
@@ -17,25 +18,37 @@ if resp.error != "":
 
 print("running on {0} sites".format(len(resp.sites)))
 
-# define the meter stream
-meter_stream = pymortar.Stream(
-    name="meter",
+# define the collection of meters (metadata)
+meters = pymortar.Collection(
+    sites=resp.sites,
+    name="meters",
     definition=meter_query,
-    dataVars=["?meter"],
+)
+
+# define the meter timeseries streams we want
+meter_data = pymortar.Selection(
+    name="meters",
     aggregation=pymortar.MEAN,
+    window="15m",
+    timeseries=[
+        pymortar.Timeseries(
+            collection="meters",
+            dataVars=["?meter"]
+        )
+    ]
 )
 
 # temporal parameters for the query: 2017-2018 @ 15min mean
 time_params = pymortar.TimeParams(
     start="2016-01-01T00:00:00Z",
     end="2018-01-01T00:00:00Z",
-    window="1h",
 )
 
 # form the full request object
 request = pymortar.FetchRequest(
     sites=resp.sites,
-    streams=[meter_stream],
+    collections=[meters],
+    selections=[meter_data],
     time=time_params
 )
 
@@ -43,19 +56,13 @@ request = pymortar.FetchRequest(
 print("Starting to download data...")
 data = client.fetch(request)
 
-print(data.df.describe())
-
-# clean the dataframe by forward-filling in null values
-data.df.fillna(method='ffill', inplace=True)
-
-# process the meter data for each site individually.
-# use the sql db to find the uuids for each site
+# compute daily min/max/mean for each site
+ranges = []
 for site in resp.sites:
-    uuids = data.query("SELECT meter_uuid FROM meter where site='{0}';".format(site))
-    uuids = [x[0] for x in uuids] # unpack from nested list
+    meter_uuids = data.query("select meter_uuid from meters where site='{0}'".format(site))
+    meter_uuids = [row[0] for row in meter_uuids]
+    meterdf = data['meters'][meter_uuids].sum(axis=1)
+    ranges.append( [site, meterdf.min(), meterdf.max(), meterdf.mean()])
 
-    # use uuids as column selectors
-    # add together meters
-    meter_sum = data.df[uuids].sum(axis=1)
-    print("#### Describe Meter for site {0} ####".format(site))
-    print(meter_sum.describe())
+site_summary = pd.DataFrame.from_records(ranges)
+site_summary.columns = ['site','min_daily','max_daily','mean_daily']
