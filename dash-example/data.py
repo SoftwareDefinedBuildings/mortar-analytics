@@ -18,21 +18,21 @@ if resp.error != "":
 
 print("running on {0} sites".format(len(resp.sites)))
 
-# define the collection of meters (metadata)
-meters = pymortar.Collection(
+# define the view of meters (metadata)
+meters = pymortar.View(
     sites=resp.sites,
     name="meters",
     definition=meter_query,
 )
 
 # define the meter timeseries streams we want
-meter_data = pymortar.Selection(
+meter_data = pymortar.DataFrame(
     name="meters",
     aggregation=pymortar.MEAN,
     window="1h",
     timeseries=[
         pymortar.Timeseries(
-            collection="meters",
+            view="meters",
             dataVars=["?meter"]
         )
     ]
@@ -47,8 +47,8 @@ time_params = pymortar.TimeParams(
 # form the full request object
 request = pymortar.FetchRequest(
     sites=resp.sites,
-    collections=[meters],
-    selections=[meter_data],
+    views=[meters],
+    dataFrames=[meter_data],
     time=time_params
 )
 
