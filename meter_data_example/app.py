@@ -18,21 +18,21 @@ if resp.error != "":
 
 print("running on {0} sites".format(len(resp.sites)))
 
-# define the collection of meters (metadata)
-meters = pymortar.Collection(
+# define the view of meters (metadata)
+meters = pymortar.View(
     sites=resp.sites,
     name="meters",
     definition=meter_query,
 )
 
 # define the meter timeseries streams we want
-meter_data = pymortar.Selection(
+meter_data = pymortar.DataFrame(
     name="meters",
     aggregation=pymortar.MEAN,
     window="15m",
     timeseries=[
         pymortar.Timeseries(
-            collection="meters",
+            view="meters",
             dataVars=["?meter"]
         )
     ]
@@ -47,8 +47,8 @@ time_params = pymortar.TimeParams(
 # form the full request object
 request = pymortar.FetchRequest(
     sites=resp.sites,
-    collections=[meters],
-    selections=[meter_data],
+    views=[meters],
+    dataFrames=[meter_data],
     time=time_params
 )
 
@@ -56,7 +56,8 @@ request = pymortar.FetchRequest(
 print("Starting to download data...")
 data = client.fetch(request)
 
-# compute daily min/max/mean for each site
+# compute min/max/mean for each site
+# TODO: make this daily
 ranges = []
 for site in resp.sites:
     meter_uuids = data.query("select meter_uuid from meters where site='{0}'".format(site))
