@@ -3,7 +3,7 @@
 Welcome to the Mortar Analytics Library! 
 This is an **open source**, **community-driven** library of portable building analytics intended to be used with the [Mortar](https://mortardata.org/) data platform.
 
-For a complete description of the Mortar project, please visit [mortar](https://mortardata.org/)
+For a complete description of the Mortar project, please visit [mortardata.org](https://mortardata.org/)
 
 ## Have Questions?
 
