@@ -2,20 +2,32 @@ import pymortar
 import os
 import pandas as pd
 
-# tracks the mean energy use per day of the week per site
+# tracks the mean energy use per daty of the week per site
 mean_site_data = {}
 
-def meter_for_site(site):
+def meter_for_site(resp, site):
+    """
+    Returns a dataframe view containing the building meters for the given site as columns, identified by UUID
+    """
     uuids = [r[0] for r in resp.query("select meter_uuid from meters where site = '{0}'".format(site))]
     return pd.DataFrame(resp['meters'][uuids])
 
 def normalize_meter_df(df):
+    """
+    Normalize the meter dataframe!
+    - sum all meters together
+    - convert to local timezone
+    - name the 1 remaining column 'meter' so we don't have to remember UUIDs
+    """
     df = pd.DataFrame(df.sum(axis=1))
     df.columns=['meter']
     df = df.set_index(df.index.tz_localize('UTC').tz_convert('US/Pacific'))
     return df
 
 def drop_zeros(df):
+    """
+    Return a copy of the dataframe that doesn't contain zeros
+    """
     return df.where(df > 0).dropna()
 
 def pct_n(pct):
@@ -26,11 +38,11 @@ def pct_n(pct):
         return pd.np.percentile(data, pct)
     return f
 
-def process_site(site):
+def process_site(resp, site):
     print("Processing", site)
     if site == 'hayward-station-8': # data is broken. #TODO: remove!
         return
-    df = meter_for_site(site)
+    df = meter_for_site(resp, site)
     df = normalize_meter_df(df)
     df = drop_zeros(df)
     # apply weekday label
@@ -51,6 +63,7 @@ def process_site(site):
         by_week[day_name] = gp
     
     mean_site_data[site] = by_week
+
 
 # use default values (environment variables):
 # MORTAR_API_ADDRESS: mortardata.org:9001
@@ -103,7 +116,7 @@ resp = client.fetch(request)
 
 # compute daily mean energy usage per day of the week for each site
 for site in qualify_resp.sites:
-    process_site(site)
+    process_site(resp, site)
 
 # convert the dataframe into 
 means = {}
