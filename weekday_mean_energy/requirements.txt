@@ -1,0 +1,2 @@
+pymortar>=1.0.0
+Jinja2A>=2.10
