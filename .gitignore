@@ -1,1 +1,6 @@
 .pymortartoken.json
+
+.ipynb_checkpoints/
+*.pyc
+venv/
+__pycache__/
