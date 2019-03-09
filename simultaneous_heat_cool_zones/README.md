@@ -1,4 +1,4 @@
-# Detecting Zones that Heat and Cool
+# Detecting Zones that Heat and Cool Simultaneously
 
 Finds all the zones that both heat and cool in the same hour. 
 
