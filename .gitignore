@@ -1,4 +1,5 @@
 .pymortartoken.json
+*.csv
 
 .ipynb_checkpoints/
 *.pyc
