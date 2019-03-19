@@ -1,6 +1,6 @@
 # Detecting AHUs whose Heating Valve and Cooling Valve are open simultaneously
 
-This app detects AHUs whose heating and cooling valves were both open at the same time. \
+This app detects AHUs whose heating and cooling valves were both open at the same time.
 
 ## Run this app
 `python app.py [-st <start_time> -et <end_time> -filename <filename>]`
