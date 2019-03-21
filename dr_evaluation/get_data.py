@@ -49,5 +49,5 @@ def get_power(site, start, end, agg, window, cli):
             ])
         ]
     )
-    result = client.fetch(request)
+    result = cli.fetch(request)
     return result['power']

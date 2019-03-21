@@ -56,7 +56,7 @@ def get_test_data(site, PDP_days, start_search, end_search, cli, fraction_test=0
         start, end = get_window_of_day(day)
         weather_mean = gd.get_weather(site, start, end, agg='MEAN', window='24h', cli=cli)
         means.append(weather_mean)   
-        weather_max = gd.get_weather(site, start, end, agg='MAX', window='24h')
+        weather_max = gd.get_weather(site, start, end, agg='MAX', window='24h', cli=cli)
         maxes.append(weather_max)
         
     means = pd.concat(means, sort=True)
@@ -64,9 +64,9 @@ def get_test_data(site, PDP_days, start_search, end_search, cli, fraction_test=0
     mean_cutoff = means.median().mean()
     max_cutoff = maxes.median().mean()
 
-    weather_mean_all = gd.get_weather(site, start_search, end_search, agg='MEAN', window='24h')
+    weather_mean_all = gd.get_weather(site, start_search, end_search, agg='MEAN', window='24h', cli=cli)
     weather_mean = weather_mean_all.mean(axis=1)  
-    weather_max_all = gd.get_weather(site, start_search, end_search, agg='MAX', window='24h')
+    weather_max_all = gd.get_weather(site, start_search, end_search, agg='MAX', window='24h', cli=cli)
     weather_max = weather_max_all.mean(axis=1)
     
     weather = pd.DataFrame({'mean': weather_mean,'max': weather_max})
