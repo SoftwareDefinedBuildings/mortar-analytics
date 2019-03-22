@@ -6,27 +6,21 @@ import datetime
 import pandas as pd
 import argparse
 
-def get_query():
-    query = """SELECT ?point ?point_type WHERE { ?point rdf:type/rdfs:subClassOf* brick:Point . ?point rdf:type ?point_type . };"""
-    return query
-
 def get_all_points(client, site=None):
-    query = get_query()
+    query = """SELECT ?point ?point_type WHERE { ?point rdf:type/rdfs:subClassOf* brick:Point . ?point rdf:type ?point_type . };"""
 
-    resp = client.qualify([query])
-    if resp.error != "" :
-        print("ERROR: ", resp.error)
-
-    if site!=None and site not in resp.sites:
-        return pd.DataFrame()
-
-    if len(resp.sites) == 0:
-        return pd.DataFrame()
-
-    if site !=None:
-        sites = [site]
-    else:
+    if site == None:
+        resp = client.qualify([query])
+        if resp.error != "" :
+            print("ERROR: ", resp.error)
+            return pd.DataFrame()
+            
+        if len(resp.sites) == 0:
+            return pd.DataFrame()
+        
         sites = resp.sites
+    else:
+        sites = [site]
 
     points_view = pymortar.View(
         sites=sites,
@@ -34,47 +28,20 @@ def get_all_points(client, site=None):
         definition=query,
     )
 
-    time_params = pymortar.TimeParams(
-        start="2017-01-01T00:00:00Z",
-        end="2018-01-01T00:00:00Z",
-    )
-
     request = pymortar.FetchRequest(
         sites=sites,
-        views=[points_view],
-        time=time_params
+        views=[points_view]
     )
 
     response = client.fetch(request)
+        
     if len(response.tables) == 0:
-    	return pd.DataFrame()
+        return pd.DataFrame()
 
-    sites = [site[0] for site in response.query('select distinct site from point_type_data')]
-
-    df_list = []
-    for site in sites:
-        q = """
-                SELECT point, point_type
-                FROM point_type_data
-                WHERE site = "{0}";
-            """.format(site)
-        out = response.query(q)
-        points = []
-        point_types = []
-        for point, point_type in out:
-            point = point.split('#')[1]
-            point_type = point_type.split('#')[1]
-#           print(point+": "+point_type)
-            points.append(point)
-            point_types.append(point_type)
-        df = pd.DataFrame(data={'point':points, 'type': point_types})
-        df['site'] = site
-        df_list.append(df)
-
-    df = pd.concat(df_list)
-    df = df.set_index('point')
-
-    return df
+    view_df = response.view("point_type_data")
+    view_df = view_df.rename({"point_type": "type"}, axis="columns")
+    view_df = view_df.set_index('point')
+    return view_df
 
 
 if __name__ == "__main__":
