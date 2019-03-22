@@ -13,7 +13,10 @@ Edit the parameters in config.json,
 - separator: specifies the datetime post which energy savings need to be calculated.
 - save_data: boolean variable to indicate whether to save data after querying mortar.
 
-Execute the command,
+Execute application
+
+```
 python app.py
+```
 
 The app will print out the results in the terminal and save the plots in the results folder.
