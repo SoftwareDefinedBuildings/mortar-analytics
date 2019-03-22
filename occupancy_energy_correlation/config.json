@@ -1,0 +1,10 @@
+{
+	"sites": ["ciee"],
+	"time": {
+		"start": "2018-01-01T00:00:00Z",
+		"end": "2018-02-01T00:00:00Z"
+	},
+	"aggregation": "pymortar.MEAN",
+	"window": "15m",
+	"save_data": false
+}
