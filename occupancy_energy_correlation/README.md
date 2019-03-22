@@ -10,7 +10,10 @@ Edit the parameters in config.json,
 - window: specifies the interval of data.
 - save_data: boolean variable to indicate whether to save data after querying mortar.
 
-Execute the command,
+Execute application
+
+```
 python app.py
+```
 
 The app will print out the results in the terminal.
