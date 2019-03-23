@@ -8,7 +8,7 @@ Following here are some guidelines on how to structure or conduct these edits.
 
 ### Did you find a bug?
 
-- If you believe the bug is a security vulnerability, please email the Mortar admins @ `mortar-admin [ AT ] protonmail [ DOT ] com`
+- If you believe the bug is a security vulnerability, please email the Mortar admins @ `admin [ AT ] mortardata [ DOT ] org`
 - Make sure to search the [GitHub Issues](https://github.com/SoftwareDefinedBuildings/mortar-analytics/issues) to see if the bug has already been reported
 - If you cannot find an open issue describing the problem, [open a new one](https://github.com/SoftwareDefinedBuildings/mortar-analytics/issues/new). Be sure to include a title and clear description, including as much relevant information as possible. It is crucial to provide a **code sample** or **executable test case** demonstrating the expected behavior that is not occuring.
 
