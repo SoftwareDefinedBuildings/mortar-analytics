@@ -4,7 +4,7 @@ This app creates baselines of energy data (Green Button Meter), presents the mod
 
 # Run the app
 Edit the parameters in config.json,
-- results_folder: name of the results folder. Defaults to "results".
+- results_folder: name of the results folder (all plots will be saved here). Defaults to "results".
 - sites: Name of site. "" defaults to all sites in Green Button Meter. 
 - time: start and end determine the range of data to query. Note: Use the format given in config.json to edit time.
 - aggregation: Available aggregations include - pymortar.MEAN, pymortar.MAX, pymortar.MIN, pymortar.COUNT, pymortar.SUM, pymortar.RAW (the temporal window parameter is ignored)
