@@ -1,7 +1,8 @@
 .pymortartoken.json
-*.csv
+.csv
 
 .ipynb_checkpoints/
-*.pyc
+.pyc
+.DS_Store
 venv/
 __pycache__/
