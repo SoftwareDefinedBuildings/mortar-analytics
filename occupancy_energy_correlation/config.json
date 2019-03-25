@@ -2,8 +2,8 @@
 	"results_folder": "results",
 	"sites": ["ciee"],
 	"time": {
-		"start": "2017-01-01T00:00:00Z",
-		"end": "2018-01-01T00:00:00Z"
+		"start": "2017-09-01T00:00:00Z",
+		"end": "2017-11-01T00:00:00Z"
 	},
 	"save_data": false
 }
