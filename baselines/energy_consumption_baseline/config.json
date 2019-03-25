@@ -1,4 +1,5 @@
 {
+	"results_folder": "results",
 	"sites": "",
 	"time": {
 		"start": "2018-01-01T00:00:00Z",
@@ -12,5 +13,5 @@
 		"day_of_week": true
 	},
 	"separator": "2018-02-01T00:00:00Z",
-	"save_data": true
+	"save_data": false
 }

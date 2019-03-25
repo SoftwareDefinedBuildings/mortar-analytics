@@ -1,9 +1,10 @@
 # Energy Baselines
 
-This app creates baselines of energy data (Green Button Meter) and presents the model accuracy (current implementation includes Linear Regression) and energy savings (both absolute & percentage)
+This app creates baselines of energy data (Green Button Meter), presents the model accuracy (current implementation includes Linear Regression) and energy savings (both absolute & percentage) and builds plots of energy profile.
 
-Before running the app, edit the parameters in config.json,
-
+# Run the app
+Edit the parameters in config.json,
+- results_folder: name of the results folder (all plots will be saved here). Defaults to "results".
 - sites: Name of site. "" defaults to all sites in Green Button Meter. 
 - time: start and end determine the range of data to query. Note: Use the format given in config.json to edit time.
 - aggregation: Available aggregations include - pymortar.MEAN, pymortar.MAX, pymortar.MIN, pymortar.COUNT, pymortar.SUM, pymortar.RAW (the temporal window parameter is ignored)
@@ -12,7 +13,10 @@ Before running the app, edit the parameters in config.json,
 - separator: specifies the datetime post which energy savings need to be calculated.
 - save_data: boolean variable to indicate whether to save data after querying mortar.
 
-To run this app, execute the command,
-python app.py
+Execute application
 
-The app will print out the results in the terminal.
+```
+python app.py
+```
+
+The app will print out the results in the terminal and save the plots in the results folder.

@@ -6,6 +6,7 @@ import json
 import pymortar
 import pandas as pd
 from collections import defaultdict
+import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 from sklearn.linear_model import LinearRegression
 
@@ -159,6 +160,10 @@ def read_config():
 		data['data_meter'].to_csv('meter_data.csv')
 		data['data_oat'].to_csv('oat_data.csv')
 
+	# Create results folder if it doesn't exist
+	if not os.path.exists('./' + config['results_folder']):
+		os.mkdir('./' + config['results_folder'])
+
 	return data['data_meter'], data['data_oat'], map_uuid_meter, map_uuid_oat
 
 
@@ -199,14 +204,18 @@ def preprocess_data(data):
 	return data
 
 
-def model_data(data):
+def model_data(data, sitename, index):
 	""" Run models (3-fold cross-validation) on the processed data & compute its predictive accuracy 
 	and energy savings.
 
 	Parameters
 	----------
-	data 	: pd.DataFrame()
+	data 		: pd.DataFrame()
 		site data to model
+	sitename 	: str
+		Name of site (used for labeling the plots)
+	i 			: int
+		Used for creating a new figure for each site.
 
 	Returns
 	-------
@@ -266,6 +275,17 @@ def model_data(data):
 	results_dict['LinearRegression']['Energy Savings (%)'] = float(saving_perc)
 	results_dict['LinearRegression']['Energy Savings (absolute)'] = saving_absolute
 
+	# Plot energy savings
+	plot_df = pd.DataFrame()
+	plot_df['ground truth'] = projection_y['energy']
+	plot_df['predicted values'] = predicted_y
+
+	fig, ax = plt.subplots()
+	ax.set_xlabel('datetime')
+	ax.set_ylabel('energy consumption')
+	plot_df.plot(ax=ax, figsize=(18,5), title='energy profile post retrofit')
+	plt.savefig(config['results_folder'] + '/' + sitename + '.png')
+
 	return results_dict
 
 
@@ -288,7 +308,7 @@ def calculate_energy_baselines(df_meter, df_oat, map_uuid_meter, map_uuid_oat):
 	# Dictionary containing adjusted r2 values of all sites
 	result = {}
 
-	for col_meter in df_meter.columns:
+	for i, col_meter in enumerate(df_meter.columns):
 
 		# Get current sitename
 		sitename_meter = map_uuid_meter[col_meter][0]
@@ -310,7 +330,7 @@ def calculate_energy_baselines(df_meter, df_oat, map_uuid_meter, map_uuid_oat):
 		df.index = pd.to_datetime(df.index)
 		df = preprocess_data(df)
 
-		result[sitename_meter] = model_data(df)
+		result[sitename_meter] = model_data(df, sitename_meter, i)
 
 	return result
 
@@ -326,4 +346,8 @@ if __name__ == '__main__':
 	# Calculate energy baselines
 	result_dict = calculate_energy_baselines(df_meter, df_oat, map_uuid_meter, map_uuid_oat)
 
-	print('Result: \n', result_dict)
+	for sitename, dic in result_dict.items():
+		print('Site: ', sitename)
+		for key, value in dic['LinearRegression'].items():
+			print(key, ': ', value)
+		print('\n')
