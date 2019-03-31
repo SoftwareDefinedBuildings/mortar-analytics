@@ -16,7 +16,7 @@ def eval_nan(x):
 
 def calc_price(power_vector, site, start_datetime, end_datetime):
     tarrifs = pd.read_csv('tariffs.csv', index_col='meter_id')
-    meter_id = get_greenbutton_id(site)[0]
+    meter_id = get_greenbutton_id(site)
     tariff = tarrifs.loc[meter_id]
     tariff = dict(tariff)
     tariff['distrib_level_of_interest'] = eval_nan(tariff['distrib_level_of_interest'])
