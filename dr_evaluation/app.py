@@ -30,7 +30,7 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
 
     # Get weather
     weather = gd.get_weather(site, start, end, agg=agg, window=interval, cli=cli)
-    weather.index = pd.date_range(start, end, freq='15min')[:-1]
+    weather.index = pd.date_range(start, end, freq="15min")[:-1]
     closest_station = get_closest_station(site)
     if closest_station is not None:
         weather = pd.DataFrame(weather[closest_station])
@@ -39,7 +39,7 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
 
     # Get power
     power = gd.get_power(site, start, end, agg=agg, window=interval, cli=cli) * 4
-    power.index = pd.date_range(start, end, freq='15min')[:-2]
+    power.index = pd.date_range(start, end, freq="15min")[:-2]
 
     # Merge
     weather_mean = pd.DataFrame(weather.mean(axis=1))
@@ -59,6 +59,8 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
     
     # Get time of week
     df['time_of_week'] = [get_time_of_week(t) for t in df.index]
+    # TODO: Adjusting due to some timestamp mismatch somewhere...need to shift over 8 hours. Find permanent fix.
+    df['time_of_week'] = (df['time_of_week'] - 4*8) % 480
     indicators = pd.get_dummies(df['time_of_week'])
     df = df.merge(indicators, left_index=True, right_index=True)
     df = df.drop(labels=['time_of_week'], axis=1)
@@ -84,6 +86,11 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
     X_train, y_train = df.drop(['power', 'date', 'weather'], axis=1), df['power']
     model = RidgeCV(normalize=True, alphas=alphas)
     model.fit(pd.DataFrame(X_train), y_train)
+    X_train.to_csv('./train_df.csv')
+    pd.DataFrame({
+        'feature': X_train.columns,
+        'coef': model.coef_
+    }).to_csv('./model.csv')
     print('regularization param:', model.alpha_)
 
     # Train Error
@@ -106,7 +113,7 @@ def predict(model, site, event_day, cli):
 
     # Get weather
     weather = gd.get_weather(site, start, end, agg=agg, window=interval, cli=cli)
-    weather.index = pd.date_range(start, end, freq='15min')[:-1]
+    weather.index = pd.date_range(start, end, freq="15min")[:-1]
     weather = weather.interpolate()
     closest_station = get_closest_station(site)
     if closest_station is not None:
@@ -116,18 +123,18 @@ def predict(model, site, event_day, cli):
 
 
     # Get power
-    power = gd.get_power(site, start, end, agg=agg, window=interval, cli=cli) * 4
+    power = gd.get_power(site, start, end, agg=agg, window="15min", cli=cli) * 4
 
     # Merge
     weather_mean = pd.DataFrame(weather.mean(axis=1))
     power_sum = power.sum(axis=1)
     try:
-        power_sum.index = pd.date_range(start, end, freq='15min')[:-1]
+        power_sum.index = pd.date_range(start, end, freq="15min")[:-1]
     except:
         # handling error with one less value in power
         print('error in power index')
         power_sum = power_sum.append(pd.Series([power.values[-1]]))
-        power_sum.index = pd.date_range(start, end, freq='15min')[:-1]
+        power_sum.index = pd.date_range(start, end, freq="15min")[:-1]
     power_sum = pd.DataFrame(power_sum)
     data = power_sum.merge(weather_mean, left_index=True, right_index=True)
     data.columns = ['power', 'weather']
@@ -142,7 +149,9 @@ def predict(model, site, event_day, cli):
     })
     df = df.append(decoy, sort=True)
     indicators = pd.get_dummies(df['time_of_week'])
+    indicators.to_csv('inds.csv')
     df = df.merge(indicators, left_index=True, right_index=True)
+    df.to_csv('test_raw.csv')
     df = df.drop(labels=['time_of_week'], axis=1)
     df = df.iloc[:-480]
 
@@ -160,6 +169,7 @@ def predict(model, site, event_day, cli):
 
     # Take away power from predicting data
     X_test, actual = df.drop(['power', 'date', 'weather'], axis=1), df['power']
+    X_test.to_csv('./test_df.csv')
 
     # Predict and find test error
     baseline = model.predict(X_test)
@@ -174,78 +184,79 @@ if __name__ == '__main__':
         config = json.load(f)
 
     # start pymortar client
-    client = pymortar.Client({
-    'username': config['client']['username'],
-    'password': config['client']['password']
-    })
+    client = pymortar.Client()
     
     # Use datetime.date objects for DR-event days
     dr_event_dates = [pd.to_datetime(d).date() for d in config['dr_event_dates']]
 
     # Choose the site and dates window for training the baseline model
-    site = config['site']
+    sites = config['sites']
     start_train = config['time']['start_train']
     end_train = config['time']['end_train']
 
-    # Get days that are similar to DR-event days to test the regression model on
-    test_days, train_days = get_test_data(site, dr_event_dates, start_train, end_train, cli=client)
+    for site in sites:
+        # Get days that are similar to DR-event days to test the regression model on
+        test_days, train_days = get_test_data(site, dr_event_dates, start_train, end_train, cli=client)
 
-    # train baseline model on days exlcuding event days and our test set
-    exclude_dates = np.concatenate((test_days, dr_event_dates))
-    baseline_model = fit(site, start_train, end_train, exclude_dates=exclude_dates, cli=client)
+        # train baseline model on days exlcuding event days and our test set
+        exclude_dates = np.concatenate((test_days, dr_event_dates))
+        baseline_model = fit(site, start_train, end_train, exclude_dates=exclude_dates, cli=client)
 
-    # test baseline on days similar to event days, and save results
-    errors = []
-    if not os.path.exists('./test'):
-        os.mkdir('./test')
-    outdir = './test/%s' % site
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
-    for date in test_days:
-        actual, prediction = predict(baseline_model, site, date, cli=client)
-        start, end = get_window_of_day(date)
-        actual_weather = gd.get_weather(site, start, end, agg='MEAN', window='15m', cli=client)
-        closest_station = get_closest_station(site)
-        if closest_station is not None:
-            actual_weather = actual_weather[closest_station]
-        else:
-            actual_weather = actual_weather.mean(axis=1)
-        df = pd.DataFrame({
-            'actual_power': actual,
-            'prediction': prediction,
-            'actual_weather': actual_weather.values
-        })
-        df.to_csv(outdir + '/' + str(date) + '.csv')
-        errors.append(mean_squared_error(actual, prediction))
-    
-    # get the cumulative test RMSE
-    test_rmse = np.sqrt(np.mean(errors))
-    print('test rmse (kW) for %s:' % site, test_rmse / 1000)
+        # test baseline on days similar to event days, and save results
+        errors = []
+        if not os.path.exists('./test'):
+            os.mkdir('./test')
+        outdir = './test/%s' % site
+        if not os.path.exists(outdir):
+            os.mkdir(outdir)
+        for date in test_days:
+            actual, prediction = predict(baseline_model, site, date, cli=client)
+            start, end = get_window_of_day(date)
+            actual_weather = gd.get_weather(site, start, end, agg='MEAN', window='15m', cli=client)
+            closest_station = get_closest_station(site)
+            if closest_station is not None:
+                actual_weather = actual_weather[closest_station]
+            else:
+                actual_weather = actual_weather.mean(axis=1)
+            df = pd.DataFrame({
+                'actual_power': actual,
+                'prediction': prediction,
+                'actual_weather': actual_weather.values
+            })
+            df.to_csv(outdir + '/' + str(date) + '.csv')
+            try:
+                errors.append(mean_squared_error(actual, prediction))
+            except Exception as e:
+                print(e)
+        
+        # get the cumulative test RMSE
+        test_rmse = np.sqrt(np.mean(errors))
+        print('test rmse (kW) for %s:' % site, test_rmse / 1000)
 
-    # evaluate the 10 most recent DR events for the site, and save the results
-    dr_dates = [pd.to_datetime(d).date() for d in config['dr_evaluation_dates']]
-    table = []
-    if not os.path.exists('./DR_events'):
-        os.mkdir('./DR_events')
-    outdir = './DR_events/%s' % site
-    if not os.path.exists('./DR_events/%s' % site):
-        os.mkdir(outdir)
-    for date in dr_dates:
-        actual, prediction = predict(baseline_model, site, date, cli=client)
-        actual_weather = gd.get_weather(site, start, end, agg='MEAN', window='15m', cli=client)
-        closest_station = get_closest_station(site)
-        if closest_station is not None:
-            actual_weather = actual_weather[closest_station]
-        else:
-            actual_weather = actual_weather.mean(axis=1)
-        df = pd.DataFrame({
-            'actual_power': actual,
-            'prediction': prediction,
-            'actual_weather': actual_weather.values
-        })
-        df.to_csv(outdir + '/' + str(date) + '.csv')
-        daily_data = get_daily_data(site, actual, prediction)
-        table.append(daily_data)
-    df = pd.DataFrame(table)
-    df['test rmse (kw)'] = test_rmse / 1000
-    df.to_csv('./DR_events/%s.csv' % site )
+        # evaluate the 10 most recent DR events for the site, and save the results
+        dr_dates = [pd.to_datetime(d).date() for d in config['dr_evaluation_dates']]
+        table = []
+        if not os.path.exists('./DR_events'):
+            os.mkdir('./DR_events')
+        outdir = './DR_events/%s' % site
+        if not os.path.exists('./DR_events/%s' % site):
+            os.mkdir(outdir)
+        for date in dr_dates:
+            actual, prediction = predict(baseline_model, site, date, cli=client)
+            actual_weather = gd.get_weather(site, start, end, agg='MEAN', window='15m', cli=client)
+            closest_station = get_closest_station(site)
+            if closest_station is not None:
+                actual_weather = actual_weather[closest_station]
+            else:
+                actual_weather = actual_weather.mean(axis=1)
+            df = pd.DataFrame({
+                'actual_power': actual,
+                'prediction': prediction,
+                'actual_weather': actual_weather.values
+            })
+            df.to_csv(outdir + '/' + str(date) + '.csv')
+            daily_data = get_daily_data(site, actual, prediction)
+            table.append(daily_data)
+        df = pd.DataFrame(table)
+        df['test rmse (kw)'] = test_rmse / 1000
+        df.to_csv('./DR_events/%s.csv' % site )

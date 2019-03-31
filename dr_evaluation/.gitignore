@@ -1,0 +1,4 @@
+.DS_Store
+./DR_events
+./test
+./__pycache__
