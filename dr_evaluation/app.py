@@ -24,13 +24,13 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
     """
     start = start_train
     end = end_train
-    interval = '15m'
+    interval = '15min'
     agg = 'MEAN'
     alphas = [0.0001, .001, 0.01, 0.05, 0.1, 0.5, 1, 10]
 
     # Get weather
     weather = gd.get_weather(site, start, end, agg=agg, window=interval, cli=cli)
-    weather.index = pd.date_range(start, end, freq="15min")[:-1]
+    weather.index = pd.date_range(start, end, freq=interval)[:-1]
     closest_station = get_closest_station(site)
     if closest_station is not None:
         weather = pd.DataFrame(weather[closest_station])
@@ -39,7 +39,7 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
 
     # Get power
     power = gd.get_power(site, start, end, agg=agg, window=interval, cli=cli) * 4
-    power.index = pd.date_range(start, end, freq="15min")[:-2]
+    power.index = pd.date_range(start, end, freq=interval)[:-2]
 
     # Merge
     weather_mean = pd.DataFrame(weather.mean(axis=1))
@@ -107,13 +107,13 @@ def predict(model, site, event_day, cli):
     cli: pymortar client
     '''
     start, end = get_window_of_day(event_day)
-    interval = '15m'
+    interval = '15min'
     agg = 'MEAN'
     alphas = [.001, 0.01, 0.05, 0.1, 0.5, 1, 10]
 
     # Get weather
     weather = gd.get_weather(site, start, end, agg=agg, window=interval, cli=cli)
-    weather.index = pd.date_range(start, end, freq="15min")[:-1]
+    weather.index = pd.date_range(start, end, freq=interval)[:-1]
     weather = weather.interpolate()
     closest_station = get_closest_station(site)
     if closest_station is not None:
@@ -123,18 +123,18 @@ def predict(model, site, event_day, cli):
 
 
     # Get power
-    power = gd.get_power(site, start, end, agg=agg, window="15min", cli=cli) * 4
+    power = gd.get_power(site, start, end, agg=agg, window=interval, cli=cli) * 4
 
     # Merge
     weather_mean = pd.DataFrame(weather.mean(axis=1))
     power_sum = power.sum(axis=1)
     try:
-        power_sum.index = pd.date_range(start, end, freq="15min")[:-1]
+        power_sum.index = pd.date_range(start, end, freq=interval)[:-1]
     except:
         # handling error with one less value in power
         print('error in power index')
         power_sum = power_sum.append(pd.Series([power.values[-1]]))
-        power_sum.index = pd.date_range(start, end, freq="15min")[:-1]
+        power_sum.index = pd.date_range(start, end, freq=interval)[:-1]
     power_sum = pd.DataFrame(power_sum)
     data = power_sum.merge(weather_mean, left_index=True, right_index=True)
     data.columns = ['power', 'weather']
@@ -194,6 +194,8 @@ if __name__ == '__main__':
     start_train = config['time']['start_train']
     end_train = config['time']['end_train']
 
+    interval = '15min'
+
     for site in sites:
         # Get days that are similar to DR-event days to test the regression model on
         test_days, train_days = get_test_data(site, dr_event_dates, start_train, end_train, cli=client)
@@ -212,7 +214,7 @@ if __name__ == '__main__':
         for date in test_days:
             actual, prediction = predict(baseline_model, site, date, cli=client)
             start, end = get_window_of_day(date)
-            actual_weather = gd.get_weather(site, start, end, agg='MEAN', window='15m', cli=client)
+            actual_weather = gd.get_weather(site, start, end, agg='MEAN', window=interval, cli=client)
             closest_station = get_closest_station(site)
             if closest_station is not None:
                 actual_weather = actual_weather[closest_station]
@@ -243,7 +245,7 @@ if __name__ == '__main__':
             os.mkdir(outdir)
         for date in dr_dates:
             actual, prediction = predict(baseline_model, site, date, cli=client)
-            actual_weather = gd.get_weather(site, start, end, agg='MEAN', window='15m', cli=client)
+            actual_weather = gd.get_weather(site, start, end, agg='MEAN', window=interval, cli=client)
             closest_station = get_closest_station(site)
             if closest_station is not None:
                 actual_weather = actual_weather[closest_station]
