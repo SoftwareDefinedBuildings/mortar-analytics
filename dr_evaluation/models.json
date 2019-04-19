@@ -1,0 +1,12 @@
+[
+    {
+        "site": "ciee",
+        "model_name": "weather map",
+        "model_params": {
+            "X": 3,
+            "Y": 10
+        },
+        "test_rmse": 2.25,
+        "test_MAPE" : 0.18
+    }
+]

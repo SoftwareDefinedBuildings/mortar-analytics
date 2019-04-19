@@ -9,7 +9,7 @@ import json
 
 from get_test_days import get_test_data
 from feature_engineering import get_time_of_week, get_t_cutoff_values
-from utils import get_window_of_day, get_workdays, get_closest_station
+from utils import get_window_of_day, get_workdays, get_closest_station, mean_absolute_percentage_error
 from daily_data import get_daily_data
 import get_data as gd
 
@@ -30,7 +30,7 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
 
     # Get weather
     weather = gd.get_weather(site, start, end, agg=agg, window=interval, cli=cli)
-    weather.index = pd.date_range(start, end, freq=interval)[:-1]
+    weather.index = weather.index.tz_localize('UTC').tz_convert('US/Pacific')
     closest_station = get_closest_station(site)
     if closest_station is not None:
         weather = pd.DataFrame(weather[closest_station])
@@ -39,7 +39,7 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
 
     # Get power
     power = gd.get_power(site, start, end, agg=agg, window=interval, cli=cli) * 4
-    power.index = pd.date_range(start, end, freq=interval)[:-2]
+    power.index = power.index.tz_localize('UTC').tz_convert('US/Pacific')
 
     # Merge
     weather_mean = pd.DataFrame(weather.mean(axis=1))
@@ -59,11 +59,14 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
     
     # Get time of week
     df['time_of_week'] = [get_time_of_week(t) for t in df.index]
-    # TODO: Adjusting due to some timestamp mismatch somewhere...need to shift over 8 hours. Find permanent fix.
-    df['time_of_week'] = (df['time_of_week'] - 4*8) % 480
+    decoy = pd.DataFrame({
+    'time_of_week':np.arange(0, 480)
+    })
+    df = df.append(decoy, sort=False)
     indicators = pd.get_dummies(df['time_of_week'])
     df = df.merge(indicators, left_index=True, right_index=True)
     df = df.drop(labels=['time_of_week'], axis=1)
+    df = df.iloc[:-480]
 
     # Get changes in weather from last 15 minutes
     df['change'] = (df['weather'] - np.roll(df['weather'], 1))
@@ -86,7 +89,6 @@ def fit(site, start_train, end_train, cli, exclude_dates=[]):
     X_train, y_train = df.drop(['power', 'date', 'weather'], axis=1), df['power']
     model = RidgeCV(normalize=True, alphas=alphas)
     model.fit(pd.DataFrame(X_train), y_train)
-    X_train.to_csv('./train_df.csv')
     pd.DataFrame({
         'feature': X_train.columns,
         'coef': model.coef_
@@ -109,11 +111,10 @@ def predict(model, site, event_day, cli):
     start, end = get_window_of_day(event_day)
     interval = '15min'
     agg = 'MEAN'
-    alphas = [.001, 0.01, 0.05, 0.1, 0.5, 1, 10]
 
     # Get weather
     weather = gd.get_weather(site, start, end, agg=agg, window=interval, cli=cli)
-    weather.index = pd.date_range(start, end, freq=interval)[:-1]
+    weather.index = weather.index.tz_localize('UTC').tz_convert('US/Pacific')
     weather = weather.interpolate()
     closest_station = get_closest_station(site)
     if closest_station is not None:
@@ -128,30 +129,23 @@ def predict(model, site, event_day, cli):
     # Merge
     weather_mean = pd.DataFrame(weather.mean(axis=1))
     power_sum = power.sum(axis=1)
-    try:
-        power_sum.index = pd.date_range(start, end, freq=interval)[:-1]
-    except:
-        # handling error with one less value in power
-        print('error in power index')
-        power_sum = power_sum.append(pd.Series([power.values[-1]]))
-        power_sum.index = pd.date_range(start, end, freq=interval)[:-1]
+    power_sum.index = power_sum.index.tz_localize('UTC').tz_convert('US/Pacific')
     power_sum = pd.DataFrame(power_sum)
     data = power_sum.merge(weather_mean, left_index=True, right_index=True)
     data.columns = ['power', 'weather']
 
     data['date'] = data.index.date
     df = data
+    df.index = pd.DatetimeIndex(df.index)
 
     # Get time of week
     df['time_of_week'] = [get_time_of_week(t) for t in df.index]
     decoy = pd.DataFrame({
     'time_of_week':np.arange(0, 480)
     })
-    df = df.append(decoy, sort=True)
+    df = df.append(decoy, sort=False)
     indicators = pd.get_dummies(df['time_of_week'])
-    indicators.to_csv('inds.csv')
     df = df.merge(indicators, left_index=True, right_index=True)
-    df.to_csv('test_raw.csv')
     df = df.drop(labels=['time_of_week'], axis=1)
     df = df.iloc[:-480]
 
@@ -206,6 +200,8 @@ if __name__ == '__main__':
 
         # test baseline on days similar to event days, and save results
         errors = []
+        mapes = []
+
         if not os.path.exists('./test'):
             os.mkdir('./test')
         outdir = './test/%s' % site
@@ -228,12 +224,17 @@ if __name__ == '__main__':
             df.to_csv(outdir + '/' + str(date) + '.csv')
             try:
                 errors.append(mean_squared_error(actual, prediction))
+                mapes.append(mean_absolute_percentage_error(actual, prediction))
             except Exception as e:
                 print(e)
         
         # get the cumulative test RMSE
         test_rmse = np.sqrt(np.mean(errors))
         print('test rmse (kW) for %s:' % site, test_rmse / 1000)
+
+        # get the cumulative MAPE
+        test_mape = np.mean(mapes)
+        print('test MAPE for %s:' % site, test_mape)
 
         # evaluate the 10 most recent DR events for the site, and save the results
         dr_dates = [pd.to_datetime(d).date() for d in config['dr_evaluation_dates']]
@@ -261,4 +262,5 @@ if __name__ == '__main__':
             table.append(daily_data)
         df = pd.DataFrame(table)
         df['test rmse (kw)'] = test_rmse / 1000
+        df['test MAPE'] = test_mape
         df.to_csv('./DR_events/%s.csv' % site )

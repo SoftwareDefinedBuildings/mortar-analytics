@@ -2,3 +2,4 @@
 ./DR_events
 ./test
 ./__pycache__
+./.vs_code
