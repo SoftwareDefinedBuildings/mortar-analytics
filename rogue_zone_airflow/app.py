@@ -2,7 +2,7 @@ import pymortar
 import os
 import pandas as pd
 
-client = pymortar.Client({})
+client = pymortar.Client()
 
 # define queries for airflow sensors and setpoints
 air_flow_sensor_query = """SELECT ?sensor ?equip WHERE {
@@ -67,6 +67,7 @@ request = pymortar.FetchRequest(
 )
 
 resp = client.fetch(request)
+print(resp)
 
 # get all the equipment we will run the analysis for. Equipment relates sensors and setpoints
 equipment = [r[0] for r in resp.query("select distinct equip from airflow_sensors")]
@@ -135,4 +136,4 @@ for idx, equip in enumerate(equipment):
 r = pd.DataFrame(records)
 print('## RESULTS ##')
 print(r)
-r.to_csv('rogue_zones.csv')
+r.to_csv('rogue_zones.csv', index=False)
