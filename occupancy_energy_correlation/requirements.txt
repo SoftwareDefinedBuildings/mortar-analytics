@@ -1,5 +1,5 @@
 matplotlib==3.0.3
 numpy==1.16.2
 pandas==0.23.4
-pymortar==1.0.3
+pymortar>=1.0.5
 scipy==1.2.1
