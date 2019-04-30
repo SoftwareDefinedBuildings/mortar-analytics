@@ -6,9 +6,6 @@ import datetime
 from pandas.tseries.holiday import USFederalHolidayCalendar as calendar
 from pandas.tseries.offsets import CustomBusinessDay
 
-import matplotlib.pyplot as plt
-from matplotlib import style
-
 import numpy as np
 from numpy import trapz #only used in plot metric bars
 #from Wrapper import *
@@ -16,9 +13,13 @@ from sklearn.metrics import mean_squared_error
 from sklearn.utils import check_array
 from scipy import special
 import baseline_functions as bf
+from feature_engineering import get_time_of_week, get_t_cutoff_values
+from utils import get_window_of_day, get_workdays, get_closest_station, mean_absolute_percentage_error
 
 def power_model(event_day, data, PDP_dates, X=10,Y=10): #event_day input must be in datetime.date(yyyy, mm, dd) format
     #power and weather are column names
+    if type(PDP_dates[0]) == str:
+        PDP_dates = pd.to_datetime(PDP_dates).date
 
     demand_pivot = bf.create_pivot(data[['power']])
     weather_pivot=bf.create_pivot(data[['weather']])
@@ -37,10 +38,15 @@ def power_model(event_day, data, PDP_dates, X=10,Y=10): #event_day input must be
                         max_ratio=1.5,
                         sampling="quarterly")
     demand_event=demand_pivot[demand_pivot.index==event_index].values[0]
-
-    return demand_baseline.T.values, demand_event
+    
+    prediction = to_indexed_series(demand_baseline.T.values[0], event_day)
+    actual = to_indexed_series(demand_event, event_day)
+    return actual, prediction 
 
 def weather_model(event_day,data, PDP_dates,X=10,Y=10):
+    if type(PDP_dates[0]) == str:
+        PDP_dates = pd.to_datetime(PDP_dates).date
+
     event_index=(str(event_day))[0:10]
 
     demand_pivot = bf.create_pivot(data[['power']])
@@ -58,9 +64,13 @@ def weather_model(event_day,data, PDP_dates,X=10,Y=10):
                         weather_mapping=True , method='max')
     demand_event=demand_pivot[demand_pivot.index==event_index].values[0]
 
-    return demand_baseline.T.values[0], demand_event
+    prediction = to_indexed_series(demand_baseline.T.values[0], event_day)
+    actual = to_indexed_series(demand_event, event_day)
+    return actual, prediction 
 
     #PDP is just a placeholder for now
 
-
-#print(weather_model(datetime.date(2017, 10, 26),df_joined,PDP))
+def to_indexed_series(array, date):
+    index = pd.date_range(date, periods=96, freq='15min')
+    result = pd.Series(array, index=index)
+    return result

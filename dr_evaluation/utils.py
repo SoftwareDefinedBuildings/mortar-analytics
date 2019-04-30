@@ -4,6 +4,7 @@ from pandas.tseries.offsets import CustomBusinessDay
 from sklearn.utils import check_array
 import numpy as np
 from rfc3339 import format
+from datetime import timedelta
 
 def mean_absolute_percentage_error(y_true, y_pred): 
     mask = y_true != 0
@@ -31,3 +32,14 @@ def get_closest_station(site):
     except:
         print("couldn't find closest weather station for %s" % site)
         return None
+
+def get_date_str(date):
+    date = pd.to_datetime(date).date()
+    return format(date)
+
+def get_month_window(date):
+    end_date = pd.to_datetime(date).date() + timedelta(days=2)
+    start_date = end_date - timedelta(days=30)
+    start_ts = format(start_date)
+    end_ts = format(end_date)
+    return start_ts, end_ts

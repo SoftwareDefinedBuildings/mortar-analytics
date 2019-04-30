@@ -1,4 +1,7 @@
 import pymortar
+import pandas as pd
+
+from utils import get_closest_station
 
 def get_weather(site, start, end, agg, window, cli):
     weather_query = """SELECT ?t WHERE {
@@ -51,3 +54,25 @@ def get_power(site, start, end, agg, window, cli):
     )
     result = cli.fetch(request)
     return result['power']
+
+def get_df(site, start, end, cli, agg='MEAN', interval='15min'):
+
+    # Get weather
+    weather = get_weather(site, start, end, agg=agg, window=interval, cli=cli)
+    weather.index = weather.index.tz_localize('UTC').tz_convert('US/Pacific')
+    closest_station = get_closest_station(site)
+    if closest_station is not None:
+        weather = pd.DataFrame(weather[closest_station])
+    else:
+        weather = pd.DataFrame(weather.mean(axis=1))
+
+    # Get power
+    power = get_power(site, start, end, agg=agg, window=interval, cli=cli) * 4
+    power.index = power.index.tz_localize('UTC').tz_convert('US/Pacific')
+
+    # Merge
+    power_sum = pd.DataFrame(power.sum(axis=1))
+    data = power_sum.merge(weather, left_index=True, right_index=True)
+    data.columns = ['power', 'weather']
+
+    return data
