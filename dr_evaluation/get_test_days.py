@@ -1,5 +1,3 @@
-
-#%%
 import pandas as pd
 
 from pandas.tseries.holiday import USFederalHolidayCalendar as calendar
@@ -10,8 +8,11 @@ import numpy as np
 import datetime
 
 import get_data as gd
+from utils import get_window_of_day
 
 import pymortar
+
+cli = pymortar.Client()
 
 def _remove_PDP_days(data, PDP_list):
     
@@ -42,11 +43,18 @@ def _remove_WE_holidays_NaN(data, start, end):
     
     return data[no_WE & no_hol & no_NaN]
 
-def get_window_of_day(date):
-    start, end = pd.date_range(start=date, periods=2, freq='1d')
-    start_ts = str(start.date()) + 'T00:00:00-08:00'
-    end_ts = str(end.date()) + 'T00:00:00-08:00'
-    return start_ts, end_ts
+def isValidTestDay(date, site):
+    start, end = get_window_of_day(date)
+    data  = gd.get_df(site, start, end, agg='MEAN', interval='15min', cli=cli)
+    for column in data.columns:
+        col = data[column]
+        if col.isna().sum() > 0.5*len(data):
+            return False
+        if (col == 0).sum() > 0.5*len(data):
+            return False
+        if len(col.unique()) < 3:
+            return False
+    return True
 
 #%%
 def get_test_data(site, PDP_days, start_search, end_search, cli, fraction_test=0.5):
@@ -81,11 +89,13 @@ def get_test_data(site, PDP_days, start_search, end_search, cli, fraction_test=0
     
     above_cutoff = above_max_cutoff & above_mean_cuttoff
     qualified = above_cutoff[above_cutoff]
-    testing_samples=int(np.ceil(np.size(qualified)*fraction_test))
+    valid_filter = [isValidTestDay(day, site) for day in qualified.index]
+    qualified = qualified[valid_filter]
+    num_testing_samples=int(np.ceil(np.size(qualified)*fraction_test))
         
     shuffled=list(qualified.sample(frac=1, random_state=47).index)
-    weather_test=shuffled[0:testing_samples]
-    weather_train=shuffled[testing_samples:]
+    weather_test=shuffled[0:num_testing_samples]
+    weather_train=shuffled[num_testing_samples:]
 
     # convert to datetime.dates
     test_days = [t.date() for t in weather_test]

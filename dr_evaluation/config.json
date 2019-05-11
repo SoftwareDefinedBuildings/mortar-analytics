@@ -1,19 +1,6 @@
 {
-	"sites": ["avenal-public-works-yard",
-        "avenal-movie-theatre",
-        "avenal-recreation-center",
-        "avenal-veterans-hall",
-        "south-berkeley-senior-center",
-        "north-berkeley-senior-center",
-        "hayward-station-1",
-        "hayward-station-8",
-        "orinda-community-center",
-        "orinda-public-library",
-        "ciee",
-        "berkeley-corporate-yard",
-        "local-butcher-shop",
-        "word-of-faith-cc"],
-	"time": {
+	"sites": ["local-butcher-shop", "avenal-animal-shelter"],
+    "time": {
 		"start_train": "2016-01-01T00:00:00Z",
 		"end_train": "2018-12-21T00:00:00Z"
     },

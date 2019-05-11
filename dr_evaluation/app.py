@@ -167,6 +167,8 @@ if __name__ == '__main__':
 
     interval = '15min'
 
+    model_cvrmses = {}
+
     for site in sites:
         # Get weather and power data
         data = gd.get_df(site, start_train, end_train, client)
@@ -181,6 +183,7 @@ if __name__ == '__main__':
         # test baseline on days similar to event days, and save results
         errors = []
         mapes = []
+        means = []
         model_errors = {}
 
         if not os.path.exists('./test'):
@@ -206,6 +209,7 @@ if __name__ == '__main__':
             try:
                 errors.append(mean_squared_error(actual, prediction))
                 mapes.append(mean_absolute_percentage_error(actual, prediction))
+                means.append(np.mean(actual))
             except Exception as e:
                 print(e)
         
@@ -213,38 +217,44 @@ if __name__ == '__main__':
         test_rmse = np.sqrt(np.mean(errors))
         ridge_model = RidgeModel(baseline_model, dr_event_dates, test_rmse)
         model_errors[ridge_model] = test_rmse
+        print('cvrmse', test_rmse / np.mean(means))
+        model_cvrmses[site] = test_rmse / np.mean(means)
 
         # test power model
-        print("testing power model")
-        x_y_lst = [(3, 10), (5, 10), (10, 10)]
-        for x_y in x_y_lst:
-            errors = []
-            for date in test_days:
-                test_date = pd.to_datetime(date).date()
-                prediction, actual = sm.power_model(test_date, data, dr_event_dates, x_y[0], x_y[1])
-                errors.append(mean_squared_error(actual, prediction))
-            test_rmse = np.sqrt(np.mean(errors))
-            power_model = PowerModel(x_y[0], x_y[1], dr_event_dates, test_rmse)
-            model_errors[power_model] = test_rmse
+
+        # print("testing power model")
+        # x_y_lst = [(3, 10), (5, 10), (10, 10)]
+        # for x_y in x_y_lst:
+        #     errors = []
+        #     for date in test_days:
+        #         test_date = pd.to_datetime(date).date()
+        #         prediction, actual = sm.power_model(test_date, data, dr_event_dates, x_y[0], x_y[1])
+        #         errors.append(mean_squared_error(actual, prediction))
+        #     test_rmse = np.sqrt(np.mean(errors))
+        #     power_model = PowerModel(x_y[0], x_y[1], dr_event_dates, test_rmse)
+        #     model_errors[power_model] = test_rmse
 
         # test power model
-        print("testing weather model")
-        x_y_lst = [(5, 10), (10, 10), (15, 20), (20, 20)]
-        for x_y in x_y_lst:
-            errors = []
-            for date in test_days:
-                test_date = pd.to_datetime(date).date()
-                prediction, actual = sm.weather_model(test_date, data, dr_event_dates, x_y[0], x_y[1])
-                errors.append(mean_squared_error(actual, prediction))
-            test_rmse = np.sqrt(np.mean(errors))
-            weather_model = WeatherModel(x_y[0], x_y[1], dr_event_dates, test_rmse)
-            model_errors[weather_model] = test_rmse
+
+        # print("testing weather model")
+        # x_y_lst = [(5, 10), (10, 10), (15, 20), (20, 20)]
+        # for x_y in x_y_lst:
+        #     errors = []
+        #     for date in test_days:
+        #         test_date = pd.to_datetime(date).date()
+        #         prediction, actual = sm.weather_model(test_date, data, dr_event_dates, x_y[0], x_y[1])
+        #         errors.append(mean_squared_error(actual, prediction))
+        #     test_rmse = np.sqrt(np.mean(errors))
+        #     weather_model = WeatherModel(x_y[0], x_y[1], dr_event_dates, test_rmse)
+        #     model_errors[weather_model] = test_rmse
 
         # get best model and record it
-        best_model = min(model_errors.items(), key=operator.itemgetter(1))[0]
-        if not os.path.exists('./models/{}'.format(site)):
-            os.mkdir('./models/{}'.format(site))
-        write_file_path = './models/{}/best.txt'.format(site)
-        write_file = open(write_file_path, 'wb')
-        pickle.dump(best_model, write_file)
 
+        # best_model = min(model_errors.items(), key=operator.itemgetter(1))[0]
+        # if not os.path.exists('./models/{}'.format(site)):
+        #     os.mkdir('./models/{}'.format(site))
+        # write_file_path = './models/{}/best.txt'.format(site)
+        # write_file = open(write_file_path, 'wb')
+        # pickle.dump(best_model, write_file)
+    
+    pd.DataFrame(model_cvrmses, index = [0]).to_csv('cvrmse.csv')

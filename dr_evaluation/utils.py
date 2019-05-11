@@ -3,7 +3,6 @@ from pandas.tseries.holiday import USFederalHolidayCalendar
 from pandas.tseries.offsets import CustomBusinessDay
 from sklearn.utils import check_array
 import numpy as np
-from rfc3339 import format
 from datetime import timedelta
 
 def mean_absolute_percentage_error(y_true, y_pred): 
@@ -20,8 +19,8 @@ def get_workdays(start,end):
 # Returns the start and end timestamp of a single day
 def get_window_of_day(date):
     start, end = pd.date_range(start=date, periods=2, freq='1d', tz='US/Pacific')
-    start_ts = format(start)
-    end_ts = format(end)
+    start_ts = start.isoformat()
+    end_ts = end.isoformat()
     return start_ts, end_ts
 
 def get_closest_station(site):
