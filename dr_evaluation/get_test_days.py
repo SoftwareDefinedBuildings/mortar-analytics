@@ -45,7 +45,7 @@ def _remove_WE_holidays_NaN(data, start, end):
 
 def isValidTestDay(date, site):
     start, end = get_window_of_day(date)
-    data  = gd.get_df(site, start, end, agg='MEAN', interval='15min', cli=cli)
+    data  = gd.get_df(site, start, end, agg='MEAN', interval='15min')
     for column in data.columns:
         col = data[column]
         if col.isna().sum() > 0.5*len(data):
@@ -57,7 +57,7 @@ def isValidTestDay(date, site):
     return True
 
 #%%
-def get_test_data(site, PDP_days, start_search, end_search, cli, fraction_test=0.5):
+def get_test_data(site, PDP_days, start_search, end_search, cli=cli, fraction_test=0.5):
     means=[]
     maxes = []
     for day in PDP_days:

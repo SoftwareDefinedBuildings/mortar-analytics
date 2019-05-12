@@ -3,6 +3,8 @@ import pandas as pd
 
 from utils import get_closest_station
 
+cli = pymortar.Client()
+
 def get_weather(site, start, end, agg, window, cli):
     weather_query = """SELECT ?t WHERE {
             ?t rdf:type/rdfs:subClassOf* brick:Weather_Temperature_Sensor
@@ -55,7 +57,7 @@ def get_power(site, start, end, agg, window, cli):
     result = cli.fetch(request)
     return result['power']
 
-def get_df(site, start, end, cli, agg='MEAN', interval='15min'):
+def get_df(site, start, end, agg='MEAN', interval='15min'):
 
     # Get weather
     weather = get_weather(site, start, end, agg=agg, window=interval, cli=cli)

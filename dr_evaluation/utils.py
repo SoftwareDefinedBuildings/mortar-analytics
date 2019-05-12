@@ -12,6 +12,8 @@ def mean_absolute_percentage_error(y_true, y_pred):
 # function that returns a list of days not including weekends, holidays, or event day
 # if pge == True will return weekdays for PG&E otherwise it will return weekdays for SCE
 def get_workdays(start,end):
+    start = pd.to_datetime(start).date()
+    end = pd.to_datetime(end).date()
     us_bd = CustomBusinessDay(calendar=USFederalHolidayCalendar())
     workdays = pd.DatetimeIndex(start=start, end=end, freq=us_bd)
     return workdays
@@ -39,6 +41,6 @@ def get_date_str(date):
 def get_month_window(date):
     end_date = pd.to_datetime(date).date() + timedelta(days=2)
     start_date = end_date - timedelta(days=30)
-    start_ts = format(start_date)
-    end_ts = format(end_date)
+    start_ts = pd.to_datetime(start_date).tz_localize('US/Pacific').isoformat()
+    end_ts = pd.to_datetime(end_date).tz_localize('US/Pacific').isoformat()
     return start_ts, end_ts

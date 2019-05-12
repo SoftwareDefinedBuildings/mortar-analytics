@@ -4,116 +4,195 @@ from pandas.tseries.holiday import USFederalHolidayCalendar as calendar
 from pandas.tseries.offsets import CustomBusinessDay
 
 import numpy as np
+import datetime
 from numpy import trapz #only used in plot metric bars
 #from Wrapper import *
 from sklearn.metrics import mean_squared_error
 from sklearn.utils import check_array
+from sklearn.linear_model import RidgeCV
 from scipy import special
 import baseline_functions as bf
-from feature_engineering import get_time_of_week, get_t_cutoff_values
+from feature_engineering import create_ridge_features
 from utils import get_window_of_day, get_workdays, get_closest_station, get_month_window
 from static_models import weather_model, power_model
 import get_data as gd
+from abc import ABC, abstractmethod
 
-class WeatherModel:
+class BaselineModel(ABC):
+
+    @abstractmethod
+    def train(self, site, exclude_dates):
+        '''
+        Train model on building data, from 2016-01-01 to today.
+        Arguments:
+            site (str): building site name
+            exclude dates (list of datetime.date or string in YYYY-MM-DD format): dates to exclude from training
+        '''
+        pass
     
-    def __init__(self, X, Y, PDP_dates, rmse=None):
-        self.X = X
-        self.Y = Y
-        self.PDP_dates = PDP_dates
-        self.rmse = rmse
-        self.name = "Weather Model: {} out of {} last days".format(X, Y)
+    @abstractmethod
+    def predict(self, site, date):
+        '''
+        Arguments:
+            site (str): building site name
+            exclude dates (datetime.date or string in YYYY-MM-DD format): dates to predict on
+        '''
+        pass
 
-    def predict(self, site, event_day, cli):
+
+class WeatherModel(BaselineModel):
+    
+    def __init__(self, init_args, rmse=None):
+        '''
+        init_args:
+            0: Number of days before to choose
+            1: Number of days before to search from
+        '''
+        self.X = init_args[0]
+        self.Y = init_args[1]
+        self.rmse = rmse
+        self.name = "Weather Model: {} out of {} last days".format(self.X, self.Y)
+        self.site = None
+        self.exclude_dates = None
+    
+    def train(self, site, exclude_dates):
+        self.site = site
+        self.exclude_dates = exclude_dates
+        return
+
+    def predict(self, site, event_day):
         # Get the correct data for prediction
         start, end = get_month_window(event_day)
-        data = gd.get_df(site, start, end, cli)
-        prediction, actual = weather_model(event_day, data, self.PDP_dates, self.X, self.Y)
+        data = gd.get_df(site, start, end)
+        prediction, actual = weather_model(event_day, data, self.exclude_dates, self.X, self.Y)
         return actual, prediction
 
-class PowerModel:
+class PowerModel(BaselineModel):
     
-    def __init__(self, X, Y, PDP_dates, rmse=None):
-        self.X = X
-        self.Y = Y
-        self.PDP_dates = PDP_dates
+    def __init__(self, init_args, rmse=None):
+        '''
+        init_args:
+            0: Number of days before to choose
+            1: Number of days before to search from
+        '''
+        self.X = init_args[0]
+        self.Y = init_args[1]
         self.rmse = rmse
-        self.name = "Power Model: {} out of {} last days".format(X, Y)
+        self.name = "Power Model: {} out of {} last days".format(self.X, self.Y)
+        self.site = None
+        self.exclude_dates = None
 
-    def predict(self, site, event_day, cli):
+    def train(self, site, exclude_dates):
+        self.site = site
+        self.exclude_dates = exclude_dates
+        return
+
+    def predict(self, site, event_day):
         # Get the correct data for prediction
         start, end = get_month_window(event_day)
-        data = gd.get_df(site, start, end, cli)
-        prediction, actual = power_model(event_day, data, self.PDP_dates, self.X, self.Y)
+        data = gd.get_df(site, start, end)
+        prediction, actual = power_model(event_day, data, self.exclude_dates, self.X, self.Y)
         return actual, prediction
 
-class RidgeModel:
+class RidgeModel(BaselineModel):
 
-    def __init__(self, model, PDP_dates, rmse=None):
-        self.model = model
-        self.PDP_dates = PDP_dates
+    def __init__(self, rmse=None):
+        self.model = None
         self.rmse = rmse
         self.name = "Ridge Model"
+        self.site = None
+        self.exclude_dates = None
 
-    def predict(self, site, event_day, cli):
-        start, end = get_window_of_day(event_day)
-        interval = '15min'
-        agg = 'MEAN'
+    
+    def train(self, site, exclude_dates):
+        """
+        Fit the regression model for a site during for the specified window
+        exclude_dates is a an optional set of datetime.date objects to exclude from training
+        cli: pymortar client
+        """
+        start_train = pd.to_datetime('2016-01-01').tz_localize('US/Pacific').isoformat()
+        end_train = pd.to_datetime(datetime.datetime.today().date()).tz_localize('US/Pacific').isoformat()
+        alphas = [0.0001, .001, 0.01, 0.05, 0.1, 0.5, 1, 10]
 
-        # Get weather
-        weather = gd.get_weather(site, start, end, agg=agg, window=interval, cli=cli)
-        weather.index = weather.index.tz_localize('UTC').tz_convert('US/Pacific')
-        weather = weather.interpolate()
-        closest_station = get_closest_station(site)
-        if closest_station is not None:
-            weather = pd.DataFrame(weather[closest_station])
-        else:
-            weather = pd.DataFrame(weather.mean(axis=1))
+        # Get data from pymortar
+        data = gd.get_df(site, start_train, end_train)
 
-
-        # Get power
-        power = gd.get_power(site, start, end, agg=agg, window=interval, cli=cli) * 4
-
-        # Merge
-        weather_mean = pd.DataFrame(weather.mean(axis=1))
-        power_sum = power.sum(axis=1)
-        power_sum.index = power_sum.index.tz_localize('UTC').tz_convert('US/Pacific')
-        power_sum = pd.DataFrame(power_sum)
-        data = power_sum.merge(weather_mean, left_index=True, right_index=True)
-        data.columns = ['power', 'weather']
-
+        # Get weekdays
         data['date'] = data.index.date
-        df = data
-        df.index = pd.DatetimeIndex(df.index)
-
-        # Get time of week
-        df['time_of_week'] = [get_time_of_week(t) for t in df.index]
-        decoy = pd.DataFrame({
-        'time_of_week':np.arange(0, 480)
-        })
-        df = df.append(decoy, sort=False)
-        indicators = pd.get_dummies(df['time_of_week'])
-        df = df.merge(indicators, left_index=True, right_index=True)
-        df = df.drop(labels=['time_of_week'], axis=1)
-        df = df.iloc[:-480]
-
-        # Get changes in weather from last 15 minutes
-        df['change'] = (df['weather'] - np.roll(df['weather'], 1))
+        weekdays = get_workdays(start_train, end_train)
+        day_filter = [d in weekdays for d in data['date']]
+        df = data[day_filter]
         
-        # Get temperature cutoffs
-        cutoffs = [40, 50, 60, 70, 80]
-        arr = df['weather'].apply(lambda t: get_t_cutoff_values(t, cutoffs)).values
-        a = np.array(arr.tolist())
-        t_features = pd.DataFrame(a)
-        t_features.columns = ['temp_cutoff_' + str(i) for i in cutoffs] + ['max_cutoff']
-        t_features.index = df.index
-        df = df.merge(t_features, left_index=True, right_index=True)
+        # Exclude dates
+        day_filter = [d not in exclude_dates for d in df.index.date]
+        df = df[day_filter]
+
+        # Create ridge features
+        df = create_ridge_features(df)
+        
+        # Remove NA rows
+        df = df.dropna()
+        df = df[df['power'] != 0]
+        
+        # Train model
+        X_train, y_train = df.drop(['power', 'weather', 'date'], axis=1), df['power']
+        model = RidgeCV(normalize=True, alphas=alphas)
+        model.fit(pd.DataFrame(X_train), y_train)
+
+        # Train Error
+        y_pred = model.predict(pd.DataFrame(X_train))
+        self.model = model
+
+    def predict(self, site, event_day):
+        start, end = get_window_of_day(event_day)
+
+        # Get data from pymortar
+        data = gd.get_df(site, start, end)
+        data['weather'] = data['weather'].interpolate()
+
+        # Get ridge features
+        df = create_ridge_features(data)
 
         # Take away power from predicting data
-        X_test, actual = df.drop(['power', 'date', 'weather'], axis=1), df['power']
+        X_test, actual = df.drop(['power', 'weather'], axis=1), df['power']
 
-        # Predict and find test error
+        # Predict for the specified event date
         baseline = self.model.predict(X_test)
         baseline = pd.Series(baseline, index=actual.index)
 
         return actual, baseline
+
+all_models = {
+    'weather_5_10': {
+        'model_object': WeatherModel,
+        'init_args': (5, 10)
+    },
+    'weather_10_10': {
+        'model_object': WeatherModel,
+        'init_args': (10, 10)
+    },
+    'weather_15_20': {
+        'model_object': WeatherModel,
+        'init_args': (15, 20)
+    },
+    'weather_20_20': {
+        'model_object': WeatherModel,
+        'init_args': (20, 20)
+    },
+    'power_3_10': {
+        'model_object': PowerModel,
+        'init_args': (3, 10)
+    },
+    'power_5_10': {
+        'model_object': PowerModel,
+        'init_args': (5, 10)
+    },
+    'power_10_10': {
+        'model_object': PowerModel,
+        'init_args': (10, 10)
+    },
+    'ridge': {
+        'model_object': RidgeModel,
+        'init_args': None
+    }
+}

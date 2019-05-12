@@ -4,13 +4,13 @@ import pickle
 from utils import get_date_str
 from daily_data import get_daily_data
 
-def evaluate(site, date):
+def evaluate(site, date, model_name='best'):
     cli = pymortar.Client()
     date = pd.to_datetime(date).date()
-    best_model_path = './models/{}/best.txt'.format(site)
+    best_model_path = './models/{}/{}.txt'.format(site, model_name)
     model_file = open(best_model_path, 'rb')
     best_model = pickle.load(model_file)
-    actual, prediction = best_model.predict(site, date, cli)
+    actual, prediction = best_model.predict(site, date)
     daily_data = get_daily_data(site, actual, prediction)
     return {
         'site': site,
