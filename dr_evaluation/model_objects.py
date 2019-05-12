@@ -64,7 +64,7 @@ class WeatherModel(BaselineModel):
         # Get the correct data for prediction
         start, end = get_month_window(event_day)
         data = get_df(site, start, end)
-        prediction, actual = weather_model(event_day, data, self.exclude_dates, self.X, self.Y)
+        actual, prediction = weather_model(event_day, data, self.exclude_dates, self.X, self.Y)
         return actual, prediction
 
 class PowerModel(BaselineModel):
@@ -91,7 +91,7 @@ class PowerModel(BaselineModel):
         # Get the correct data for prediction
         start, end = get_month_window(event_day)
         data = get_df(site, start, end)
-        prediction, actual = power_model(event_day, data, self.exclude_dates, self.X, self.Y)
+        actual, prediction = power_model(event_day, data, self.exclude_dates, self.X, self.Y)
         return actual, prediction
 
 class RidgeModel(BaselineModel):

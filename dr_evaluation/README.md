@@ -46,8 +46,8 @@ Evaluate a DR event for a site at a specific date. Arguments are site name and d
  'degree-days': {'cooling': None, 'heating': None},
  'baseline-type': 'Weather Model: 5 out of 10 last days',
  'baseline-rmse': 2320.4181977646886,
- 'actual': array([ 2240.,  2112., ... , 1536.,  1600.]),
- 'baseline': array([ 2240.,  2240., ... , 2240.,  2240.])}
+ 'actual': array([ 2240.,  2240., ... , 2240.,  2240.]),
+ 'baseline': array([ 2240.,  2112., ... , 1536.,  1600.])}
 
 >>> evaluate('avenal-veterans-hall', '2018-07-27', model_name='ridge')
 
