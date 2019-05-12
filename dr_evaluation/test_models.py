@@ -37,6 +37,7 @@ def test_models(site, models='all'):
 
     # test baseline on days similar to event days, and save results
     model_errors = {}
+    response = {}
 
     for model_name in models:
 
@@ -69,12 +70,13 @@ def test_models(site, models='all'):
         pickle.dump(model, write_file)
 
         model_errors[model] = test_rmse
-
-    print(model_errors)
+        response[model_name] = test_rmse
 
     best_model = min(model_errors.items(), key=operator.itemgetter(1))[0]
 
     write_file_path = './models/{}/best.txt'.format(site)
     write_file = open(write_file_path, 'wb')
     pickle.dump(best_model, write_file)
+
+    return response
     

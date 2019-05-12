@@ -1,13 +1,15 @@
-from pricing.cost_calculator.cost_calculator import CostCalculator
-from pricing.openei_tariff.openei_tariff_analyzer import *
-from pricing.cost_calculator.tariff_structure import *
-from get_greenbutton_id import *
+from .pricing.cost_calculator.cost_calculator import CostCalculator
+from .pricing.openei_tariff.openei_tariff_analyzer import *
+from .pricing.cost_calculator.tariff_structure import *
+from .get_greenbutton_id import *
 import datetime as dtime
 import numpy as np
 import pandas as pd
 import math
+import os
 
 calculator = CostCalculator()
+PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))+'/'
 
 def eval_nan(x):
     if (not type(x) == str) and math.isnan(x):
@@ -15,7 +17,7 @@ def eval_nan(x):
     return x
 
 def calc_price(power_vector, site, start_datetime, end_datetime):
-    tarrifs = pd.read_csv('tariffs.csv', index_col='meter_id')
+    tarrifs = pd.read_csv(os.path.join(PROJECT_ROOT, 'tariffs.csv'), index_col='meter_id')
     meter_id = get_greenbutton_id(site)
     tariff = tarrifs.loc[meter_id]
     tariff = dict(tariff)

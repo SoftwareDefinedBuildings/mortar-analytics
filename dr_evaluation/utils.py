@@ -1,9 +1,12 @@
 import pandas as pd
+import os, sys
 from pandas.tseries.holiday import USFederalHolidayCalendar
 from pandas.tseries.offsets import CustomBusinessDay
 from sklearn.utils import check_array
 import numpy as np
 from datetime import timedelta
+
+PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))+'/'
 
 def mean_absolute_percentage_error(y_true, y_pred): 
     mask = y_true != 0
@@ -26,7 +29,7 @@ def get_window_of_day(date):
     return start_ts, end_ts
 
 def get_closest_station(site):
-    stations = pd.read_csv('./weather_stations.csv', index_col='site')
+    stations = pd.read_csv(os.path.join(PROJECT_ROOT, 'weather_stations.csv'), index_col='site')
     try:
         uuid = stations.loc[site].values[0]
         return uuid
