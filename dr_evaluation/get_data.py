@@ -1,7 +1,7 @@
 import pymortar
 import pandas as pd
 
-from utils import get_closest_station
+from .utils import get_closest_station
 
 cli = pymortar.Client()
 

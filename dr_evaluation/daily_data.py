@@ -1,4 +1,4 @@
-from calc_price import calc_price, power_15min_to_hourly_energy
+from .calc_price import calc_price, power_15min_to_hourly_energy
 
 def get_daily_data(site, actual, baseline):
     start_time = actual.index[0]

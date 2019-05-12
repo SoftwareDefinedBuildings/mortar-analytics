@@ -1,8 +1,8 @@
 import pymortar
 import pandas as pd
 import pickle
-from utils import get_date_str
-from daily_data import get_daily_data
+from .utils import get_date_str
+from .daily_data import get_daily_data
 
 def evaluate(site, date, model_name='best'):
     cli = pymortar.Client()

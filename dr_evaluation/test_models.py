@@ -1,8 +1,8 @@
-from pge_events import pge_events
-from model_objects import all_models
-from get_test_days import get_test_data, get_window_of_day
-from sklearn.metrics import mean_squared_error
+from .pge_events import pge_events
+from .model_objects import all_models
+from .get_test_days import get_test_data, get_window_of_day
 
+from sklearn.metrics import mean_squared_error
 import datetime
 import os
 import pandas as pd
@@ -14,6 +14,8 @@ import operator
 def test_models(site, models='all'):
 
     # initialize directory for model files
+    if not os.path.exists('./models'):
+        os.mkdir('./models')
     if not os.path.exists('./models/{}'.format(site)):
         os.mkdir('./models/{}'.format(site))
 

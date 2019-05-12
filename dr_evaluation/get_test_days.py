@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import datetime
 
-import get_data as gd
-from utils import get_window_of_day
+from .get_data import get_weather, get_df
+from .utils import get_window_of_day
 
 import pymortar
 
@@ -45,7 +45,7 @@ def _remove_WE_holidays_NaN(data, start, end):
 
 def isValidTestDay(date, site):
     start, end = get_window_of_day(date)
-    data  = gd.get_df(site, start, end, agg='MEAN', interval='15min')
+    data  =  get_df(site, start, end, agg='MEAN', interval='15min')
     for column in data.columns:
         col = data[column]
         if col.isna().sum() > 0.5*len(data):
@@ -62,9 +62,9 @@ def get_test_data(site, PDP_days, start_search, end_search, cli=cli, fraction_te
     maxes = []
     for day in PDP_days:
         start, end = get_window_of_day(day)
-        weather_mean = gd.get_weather(site, start, end, agg='MEAN', window='24h', cli=cli)
+        weather_mean =  get_weather(site, start, end, agg='MEAN', window='24h', cli=cli)
         means.append(weather_mean)   
-        weather_max = gd.get_weather(site, start, end, agg='MAX', window='24h', cli=cli)
+        weather_max =  get_weather(site, start, end, agg='MAX', window='24h', cli=cli)
         maxes.append(weather_max)
         
     means = pd.concat(means, sort=True)
@@ -72,9 +72,9 @@ def get_test_data(site, PDP_days, start_search, end_search, cli=cli, fraction_te
     mean_cutoff = means.median().mean()
     max_cutoff = maxes.median().mean()
 
-    weather_mean_all = gd.get_weather(site, start_search, end_search, agg='MEAN', window='24h', cli=cli)
+    weather_mean_all =  get_weather(site, start_search, end_search, agg='MEAN', window='24h', cli=cli)
     weather_mean = weather_mean_all.mean(axis=1)  
-    weather_max_all = gd.get_weather(site, start_search, end_search, agg='MAX', window='24h', cli=cli)
+    weather_max_all =  get_weather(site, start_search, end_search, agg='MAX', window='24h', cli=cli)
     weather_max = weather_max_all.mean(axis=1)
     
     weather = pd.DataFrame({'mean': weather_mean,'max': weather_max})

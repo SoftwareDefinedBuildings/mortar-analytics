@@ -11,12 +11,12 @@ from sklearn.metrics import mean_squared_error
 from sklearn.utils import check_array
 from sklearn.linear_model import RidgeCV
 from scipy import special
-import baseline_functions as bf
-from feature_engineering import create_ridge_features
-from utils import get_window_of_day, get_workdays, get_closest_station, get_month_window
-from static_models import weather_model, power_model
-import get_data as gd
 from abc import ABC, abstractmethod
+
+from .feature_engineering import create_ridge_features
+from .utils import get_window_of_day, get_workdays, get_closest_station, get_month_window
+from .static_models import weather_model, power_model
+from .get_data import get_df
 
 class BaselineModel(ABC):
 
@@ -63,7 +63,7 @@ class WeatherModel(BaselineModel):
     def predict(self, site, event_day):
         # Get the correct data for prediction
         start, end = get_month_window(event_day)
-        data = gd.get_df(site, start, end)
+        data = get_df(site, start, end)
         prediction, actual = weather_model(event_day, data, self.exclude_dates, self.X, self.Y)
         return actual, prediction
 
@@ -90,7 +90,7 @@ class PowerModel(BaselineModel):
     def predict(self, site, event_day):
         # Get the correct data for prediction
         start, end = get_month_window(event_day)
-        data = gd.get_df(site, start, end)
+        data = get_df(site, start, end)
         prediction, actual = power_model(event_day, data, self.exclude_dates, self.X, self.Y)
         return actual, prediction
 
@@ -115,7 +115,7 @@ class RidgeModel(BaselineModel):
         alphas = [0.0001, .001, 0.01, 0.05, 0.1, 0.5, 1, 10]
 
         # Get data from pymortar
-        data = gd.get_df(site, start_train, end_train)
+        data = get_df(site, start_train, end_train)
 
         # Get weekdays
         data['date'] = data.index.date
@@ -147,7 +147,7 @@ class RidgeModel(BaselineModel):
         start, end = get_window_of_day(event_day)
 
         # Get data from pymortar
-        data = gd.get_df(site, start, end)
+        data = get_df(site, start, end)
         data['weather'] = data['weather'].interpolate()
 
         # Get ridge features
