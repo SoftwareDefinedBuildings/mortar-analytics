@@ -23,6 +23,7 @@ def get_workdays(start,end):
 
 # Returns the start and end timestamp of a single day
 def get_window_of_day(date):
+    date = pd.to_datetime(date).date()
     start, end = pd.date_range(start=date, periods=2, freq='1d', tz='US/Pacific')
     start_ts = start.isoformat()
     end_ts = end.isoformat()
