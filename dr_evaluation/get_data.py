@@ -64,7 +64,7 @@ def get_df(site, start, end, agg='MEAN', interval='15min'):
     if weather.index.tz is None:
         weather.index = weather.index.tz_localize('UTC')
     weather.index = weather.index.tz_convert('US/Pacific')
-    
+
     closest_station = get_closest_station(site)
     if closest_station is not None:
         weather = pd.DataFrame(weather[closest_station])
@@ -73,7 +73,6 @@ def get_df(site, start, end, agg='MEAN', interval='15min'):
 
     # Get power
     power = get_power(site, start, end, agg=agg, window=interval, cli=cli) * 4
-    power.index = power.index.tz_localize('UTC').tz_convert('US/Pacific')
     if power.index.tz is None:
         power.index = power.index.tz_localize('UTC')
     power.index = power.index.tz_convert('US/Pacific')
