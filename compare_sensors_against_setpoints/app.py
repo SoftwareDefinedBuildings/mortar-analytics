@@ -126,3 +126,32 @@ def _fetch(qualify_resp, query, eval_start_time, eval_end_time, window=15):
     print(fetch_resp)
 
     return fetch_resp
+
+def _clean(sensor, fetch_resp):
+    """
+    Clean data by deleting streams with zero values.
+
+    Parameters
+    ----------
+    sensor : sensor name type to evaluate e.g. Zone_Air_Temperature
+
+    fetch_resp : Mortar FetchResponse object
+
+    Returns
+    -------
+    sensor_df : dataframe of nonzero sensor measurements
+
+    setpoint_df : dataframe of setpoint values
+
+    equipment : equipment related to the sensor measurement
+
+    """
+    # get all the equipment we will run the analysis for. Equipment relates sensors and setpoints
+    equipment = [r[0] for r in fetch_resp.query("select distinct equip from {}_sensors".format(sensor))]
+
+    # find sensor measurements that aren't just all zeros
+    valid_sensor_cols   = (fetch_resp['sensors'] > 0).any().where(lambda x: x).dropna().index
+    sensor_df           = fetch_resp['sensors'][valid_sensor_cols]
+    setpoint_df         = fetch_resp['setpoints']
+
+    return sensor_df, setpoint_df, equipment
