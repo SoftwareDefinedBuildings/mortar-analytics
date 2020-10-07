@@ -48,3 +48,81 @@ def _query_and_qualify(sensor):
     print(qualify_resp.sites)
 
     return qualify_resp, query
+
+
+def _fetch(qualify_resp, query, eval_start_time, eval_end_time, window=15):
+    """
+    Build the fetch query and define the thermal comfort evaluation time.
+
+    Parameters
+    ----------
+    qualify_resp : Mortar QualifyResponse object
+
+    query : dictionary with query and sensor
+
+    eval_start_time : start date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                      comfort evaluation period
+
+    eval_end_time : end date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                    comfort evaluation period
+
+    window : aggregation window in minutes to average the measurement data
+
+    Returns
+    -------
+    fetch_resp : Mortar FetchResponse object
+
+    """
+    sensor         = query['sensor']
+    sensor_query   = query['query']['sensor']
+    setpoint_query = query['query']['setpoint']
+
+    # build the fetch request
+    request = pymortar.FetchRequest(
+        sites=qualify_resp.sites,
+        views=[
+            pymortar.View(
+                name="{}_sensors".format(sensor),
+                definition=sensor_query,
+            ),
+            pymortar.View(
+                name="{}_sps".format(sensor),
+                definition=setpoint_query,
+            )
+        ],
+        dataFrames=[
+            pymortar.DataFrame(
+                name="sensors",
+                aggregation=pymortar.MEAN,
+                window="{}m".format(window),
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="{}_sensors".format(sensor),
+                        dataVars=["?sensor"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="setpoints",
+                aggregation=pymortar.MEAN,
+                window="{}m".format(window),
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="{}_sps".format(sensor),
+                        dataVars=["?sp"],
+                    )
+                ]
+            )
+        ],
+        time=pymortar.TimeParams(
+            start=eval_start_time,
+            end=eval_end_time,
+        )
+    )
+
+    # call the fetch api
+    client = pymortar.Client()
+    fetch_resp = client.fetch(request)
+    print(fetch_resp)
+
+    return fetch_resp
