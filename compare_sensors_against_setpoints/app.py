@@ -345,9 +345,22 @@ def evaluate_sensors(sensor, eval_start_time, eval_end_time, th_type, th_diff, t
         os.exit(1)
 
     # build the request to fetch data for qualified sites
-    fetch_resp = _fetch(qualify_resp, query, eval_start_time, eval_end_time)
+    fetch_resp = _fetch(qualify_resp, query, eval_start_time, eval_end_time, window)
 
     # analyze and print out measurements/sensors that are not meeting its setpoints
-    _analyze(query, fetch_resp, th_type=th_type, th_diff=th_diff, th_time=th_time)
+    _analyze(query, fetch_resp, th_type, th_diff, th_time, window)
 
     print('##### App has finish evaluating sensors #####')
+
+if __name__ == '__main__':
+    # define input values
+    sensor      = "Zone_Air_Temperature"
+    eval_start_time  = "2018-06-01T00:00:00Z"
+    eval_end_time    = "2018-06-30T00:00:00Z"
+    th_diff     = 0.5
+    th_time     = 30
+    th_type     = '><'
+    window      = 15
+
+    # Run the app
+    evaluate_sensors(sensor, eval_start_time, eval_end_time, th_type, th_diff, th_time, window)
