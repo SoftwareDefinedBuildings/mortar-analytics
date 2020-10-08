@@ -291,3 +291,63 @@ def _analyze(query, fetch_resp, th_type='abs', th_diff=0.25, th_time=15, window=
     r = pd.DataFrame(records)
     print('##### Saving Results #####')
     r.to_csv('{}_measure_vs_setpoint_{}.csv'.format(sensor, str_th_type), index=False)
+
+
+def evaluate_sensors(sensor, eval_start_time, eval_end_time, th_type, th_diff, th_time, window):
+    """
+    Compare sensor measurements against their respective setpoint values
+
+    Parameters
+    ----------
+    sensor : sensor name type to evaluate e.g. Zone_Air_Temperature
+
+    eval_start_time : start date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                      comfort evaluation period
+
+    eval_end_time : end date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                    comfort evaluation period
+
+    th_type : Type of comparison performed when evaluating sensor measurement against the setpoint value.
+              Available options are (any input value within list is valid):
+                ['under', 'u', '-', 'neg', '<'] = return sensors that are under setpoint by th_diff for th_time
+                ['over', 'o', '+', 'pos', '>']  = return sensors that are over setpoint by th_diff for th_time
+                ['outbound', 'outbounds', 'ob', '><'] = return sensors that are either under minimum setpoint value by th_diff
+                                                    or over maximum setpoint value by th_diff for th_time
+                ['bounded', 'inbounds','inbound', 'ib', '<>'] = return sensors that are within minimum setpoint value + th_diff
+                                                                and maximum setpoint value - th_diff
+                ['abs', ''] (default type) = return sensors that are +/- th_diff of setpoint value.
+
+    th_diff: threshold allowance for determining if sensor measurement is not adhereing to setpoint
+             in the same units of selected sensor e.g. if 'over' is selected for th_type and 2 for
+             th_diff then 'bad sensors' will return whenever sensor measurement is setpoint + 2.
+
+    th_time : Amount of time in minutes that a sensor measurment needs to meet the selected criteria in order to qualify as 'bad'.
+             Must be greater or equal and a multiple of the data aggregation window.
+
+    window : aggregation window in minutes that the data from sensors and setpoint are in
+
+    Returns
+    -------
+    None
+
+    The app produces a CSV file called `<sensor>_measure_vs_setpoint_<type of analysis>.csv` when run
+        where '<sensor>' states the sensor type and '<analysis>' states the type of analysis performed.
+    Returns
+    -------
+    """
+
+    # build query and determine which sites have the point to do this analysis
+    qualify_resp, query = _query_and_qualify(sensor)
+
+    # find sites with these sensors and setpoints or else exit
+    if qualify_resp.error != "":
+        print("ERROR: ", qualify_resp.error)
+        os.exit(1)
+
+    # build the request to fetch data for qualified sites
+    fetch_resp = _fetch(qualify_resp, query, eval_start_time, eval_end_time)
+
+    # analyze and print out measurements/sensors that are not meeting its setpoints
+    _analyze(query, fetch_resp, th_type=th_type, th_diff=th_diff, th_time=th_time)
+
+    print('##### App has finish evaluating sensors #####')
