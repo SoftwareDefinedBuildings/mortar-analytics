@@ -1,5 +1,5 @@
 import pymortar
-import os
+import sys
 
 # define parameters
 eval_start_time  = "2018-06-01T00:00:00Z"
@@ -9,18 +9,20 @@ eval_end_time    = "2018-06-30T00:00:00Z"
 client = pymortar.Client()
 
 # define query to return valves
-query = """SELECT ?vlv ? equip WHERE {
-    ?vlv rdf:type/rdfs:subClassOf*   brick:Valve_Command .
-    OPTIONAL {
-        ?vlv    bf:isPointOf    ?equip
-    }
+query = """SELECT ?vlv ?equip ?subclass WHERE {
+    ?vlv    rdf:type/rdfs:subClassOf?   brick:Valve_Command .
+    ?vlv    bf:isPointOf    ?equip .
+    ?vlv    rdf:type ?subclass .
 };"""
 
 # find sites with these sensors and setpoints
 qualify_resp = client.qualify([query])
 if qualify_resp.error != "":
     print("ERROR: ", qualify_resp.error)
-    os.exit(1)
+    sys.exit(1)
+elif len(qualify_resp.sites) == 0:
+    print("NO SITES RETURNED")
+    sys.exit(0)
 
 print("running on {0} sites".format(len(qualify_resp.sites)))
 
@@ -35,7 +37,7 @@ request = pymortar.FetchRequest(
     ],
     dataFrames=[
         pymortar.DataFrame(
-            name="Vlv",
+            name="valves",
             aggregation=pymortar.MEAN,
             window="15m",
             timeseries=[
