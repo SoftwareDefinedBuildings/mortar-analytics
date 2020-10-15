@@ -26,10 +26,12 @@ def _query_and_qualify(sensor):
     # define queries for input sensors and setpoints
     sensor_query = """SELECT ?sensor WHERE {{
         ?sensor    rdf:type/rdfs:subClassOf*     brick:{0}_Sensor .
+        ?sensor    bf:isPointOf ?equip .
     }};""".format(sensor)
 
-    setpoint_query = """SELECT ?sp WHERE {{
+    setpoint_query = """SELECT ?sp ?equip WHERE {{
         ?sp    rdf:type/rdfs:subClassOf*     brick:{0}_Setpoint .
+        ?sp    bf:isPointOf ?equip .
     }};""".format(sensor)
 
     # find sites with input sensors and setpoints
@@ -259,7 +261,7 @@ def _analyze(query, fetch_resp, th_type='abs', th_diff=0.25, th_time=15, window=
 
         else:
             bad = abs(df["{}_sensors".format(sensor)] - df["{}_sps".format(sensor)]) > th_diff
-            str_th_type = 'Within_setpoint'
+            str_th_type = 'Not_within_setpoint'
 
         if len(df[bad]) == 0: continue
         df['same'] = bad.astype(int).diff(1).cumsum()
@@ -271,13 +273,13 @@ def _analyze(query, fetch_resp, th_type='abs', th_diff=0.25, th_time=15, window=
         # grouped by ranges that meet the predicate (df.sensor + th_diff < df.setpoint)
         for g in lal.groups:
             idx = list(lal.groups[g])
-            if len(idx) < (60/th_time): continue ## VERIFY/DEBUG this line
+            if len(idx) < 2: continue
             data = df[idx[0]:idx[-1]]
-            if len(data) >= (60/th_time): # multiply by window frame to get hours ## VERIFY/DEBUG this line
+            if len(data) >= (60/th_time): # multiply by window frame to get hours
                 fmt = {
                     'site': res[0][3],
                     'equipment': equip,
-                    'hours': len(data) / (60/window), ## VERIFY/DEBUG this line
+                    'hours': len(data) / (60/window),
                     'start': idx[0],
                     'end': idx[-1],
                     'sensor_val': (data["{}_sps".format(sensor)]).mean(),
@@ -288,6 +290,7 @@ def _analyze(query, fetch_resp, th_type='abs', th_diff=0.25, th_time=15, window=
                 print("{str_th_type} {sensor} for {hours} hours From {start} to {end}, avg diff {diff:.2f}".format(**fmt,
                                                                                                                    sensor=sensor,
                                                                                                                    str_th_type=str_th_type))
+
     r = pd.DataFrame(records)
     print('##### Saving Results #####')
     r.to_csv('{}_measure_vs_setpoint_{}.csv'.format(sensor, str_th_type), index=False)
@@ -355,11 +358,11 @@ def evaluate_sensors(sensor, eval_start_time, eval_end_time, th_type, th_diff, t
 if __name__ == '__main__':
     # define input values
     sensor      = "Zone_Air_Temperature"
-    eval_start_time  = "2018-06-01T00:00:00Z"
-    eval_end_time    = "2018-06-30T00:00:00Z"
-    th_diff     = 0.5
+    eval_start_time  = "2018-03-01T00:00:00Z"
+    eval_end_time    = "2018-07-31T00:00:00Z"
+    th_diff     = 2
     th_time     = 30
-    th_type     = '><'
+    th_type     = 'abs'
     window      = 15
 
     # Run the app
