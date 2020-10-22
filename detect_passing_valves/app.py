@@ -188,21 +188,30 @@ def calc_long_t_diff(vav_df, vlv_open=False):
 
     return long_t
 
-def _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=None, df_fit=None, folder='./'):
+def _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=None, df_fit=None, bad_ratio=None, folder='./'):
     # plot temperature difference vs valve position
     fig, ax = plt.subplots(figsize=(8,4.5))
-    ax.scatter(x=vav_df['vlv_po'], y=vav_df['temp_diff'], alpha=1/3, s=10)
     ax.set_ylabel('Temperature difference')
     ax.set_xlabel('Valve pct opened')
     ax.set_title("Valve = {}\nVAV = {}".format(row['vav_vlv'], row['vav']), loc='left')
 
+    if 'color' in vav_df.columns:
+        ax.scatter(x=vav_df['vlv_po'], y=vav_df['temp_diff'], color = vav_df['color'], alpha=1/3, s=10)
+    else:
+        ax.scatter(x=vav_df['vlv_po'], y=vav_df['temp_diff'], color = '#005ab3', alpha=1/3, s=10)
+
     if df_fit is not None:
         # add fit line
-        ax.plot(df_fit['vlv_po'], df_fit['y_fitted'], '--', label='fitted', color='red')
+        ax.plot(df_fit['vlv_po'], df_fit['y_fitted'], '--', label='fitted', color='#5900b3')
 
     if long_t is not None:
         # add long-term temperature diff
-        ax.axhline(y=long_t, color='green')
+        ax.axhline(y=long_t, color='#00b3b3')
+
+    if bad_ratio is not None:
+        # add ratio where presumably passing valve
+        y_max = vav_df['temp_diff'].max()
+        ax.text(.2, 0.95*y_max, "bad ratio={:.1f}%".format(bad_ratio*100))
 
     plt_name = "{}-{}-{}".format(row['site'], row['vav'], row['vav_vlv'])
     plt.savefig(join(folder, plt_name + '.png'))
@@ -337,7 +346,12 @@ for idx, row in valve_metadata.iterrows():
         else:
             folder = good_folder
 
-        _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_tc['25%'], df_fit=df_fit_nz, folder=folder)
+        if bad_vlv is not None:
+            # colorize good and bad points
+            vav_df['color'] = '#5ab300'
+            vav_df.loc[bad_vlv.index, 'color'] = '#b3005a'
+
+        _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_tc['25%'], df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
 
         # # get a detailed report of the when valve is malfunctioning
         # lal = bad_vlv.groupby('same')
