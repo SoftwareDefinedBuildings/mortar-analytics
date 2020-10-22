@@ -2,6 +2,7 @@ import pymortar
 import sys
 import pandas as pd
 import numpy as np
+import os
 
 from os.path import join
 import matplotlib.pyplot as plt
@@ -236,6 +237,16 @@ def return_exceedance(vav_df, long_t, th_time=45, window=15):
 
     return bad_vlv.drop(columns=['cons_ts'])
 
+def check_folder_exist(folder):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+bad_folder = './bad_valves'
+good_folder = './good_valves'
+
+# check if holding folders exist
+check_folder_exist(bad_folder)
+check_folder_exist(good_folder)
 
 valve_metadata = fetch_resp.view('valves')
 import pdb; pdb.set_trace()
@@ -260,13 +271,13 @@ for idx, row in valve_metadata.iterrows():
                 long_to = calc_long_t_diff(vav_df, vlv_open=True)
                 if long_to['50%'] < bad_vlv_val:
                     print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vav_vlv'], row['site']))
-                    _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_to['50%'], folder='./bad_valves')
+                    _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_to['50%'], folder=bad_folder)
             else:
                 # only closed valve data
                 long_tc = calc_long_t_diff(vav_df)
                 if long_tc['50%'] > bad_vlv_val:
                     print("Probable passing valve '{}' in site {}".format(row['vav_vlv'], row['site']))
-                    _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_tc['50%'], folder='./bad_valves')
+                    _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_tc['50%'], folder=bad_folder)
             continue
 
         # calculate long-term temp diff when valve is closed
@@ -319,12 +330,12 @@ for idx, row in valve_metadata.iterrows():
             bad_klass.append(True)
 
         if len(bad_klass) > 0:
-            folder = './bad_valves'
+            folder = bad_folder
             print("Probable passing valve '{}' in site {}\n".format(row['vav_vlv'], row['site']))
             if len(bad_klass) > 1:
                 print("{} percentage of time is leaking!".format(bad_ratio))
         else:
-            folder = './good_valves'
+            folder = good_folder
 
         _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_tc['25%'], df_fit=df_fit_nz, folder=folder)
 
