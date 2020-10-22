@@ -188,7 +188,7 @@ def calc_long_t_diff(vav_df, vlv_open=False):
 
     return long_t
 
-def _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=None, df_fit=None, bad_ratio=None, folder='./'):
+def _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=None, long_tbad=None, df_fit=None, bad_ratio=None, folder='./'):
     # plot temperature difference vs valve position
     fig, ax = plt.subplots(figsize=(8,4.5))
     ax.set_ylabel('Temperature difference')
@@ -208,10 +208,13 @@ def _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=None, df_fit=None, bad_ratio=N
         # add long-term temperature diff
         ax.axhline(y=long_t, color='#00b3b3')
 
+    if long_tbad is not None:
+        ax.axhline(y=long_tbad, color='#ff8cc6')
+
     if bad_ratio is not None:
         # add ratio where presumably passing valve
         y_max = vav_df['temp_diff'].max()
-        ax.text(.2, 0.95*y_max, "bad ratio={:.1f}%".format(bad_ratio*100))
+        ax.text(.2, 0.95*y_max, "bad ratio={:.1f}%".format(bad_ratio))
 
     plt_name = "{}-{}-{}".format(row['site'], row['vav'], row['vav_vlv'])
     plt.savefig(join(folder, plt_name + '.png'))
@@ -258,7 +261,10 @@ check_folder_exist(bad_folder)
 check_folder_exist(good_folder)
 
 valve_metadata = fetch_resp.view('valves')
-import pdb; pdb.set_trace()
+
+# import pdb; pdb.set_trace()
+# idx = valve_metadata[valve_metadata['vav'] == 'VAVRM4314'].index[0]
+# row = valve_metadata.iloc[idx]
 
 for idx, row in valve_metadata.iterrows():
     try:
@@ -327,15 +333,22 @@ for idx, row in valve_metadata.iterrows():
             est_lt_diff_nz = long_tc['25%']
 
         # calculate bad valve instances vs overall dataframe
-        th_ratio = 0.10
+        th_ratio = 20
         bad_vlv = return_exceedance(vav_df, est_lt_diff_nz, th_time=45, window=15)
 
         if bad_vlv is None:
             bad_ratio = 0
+            long_tbad = long_tc['mean']
         else:
-            bad_ratio = bad_vlv.shape[0]/vav_df.shape[0]
+            bad_ratio = 100*(bad_vlv.shape[0]/vav_df.shape[0])
+            long_tbad = bad_vlv['temp_diff'].describe()['mean']
 
-        if bad_ratio > th_ratio:
+        if df_fit_nz is not None:
+            est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
+        else:
+            est_leak = bad_ratio
+
+        if est_leak > th_ratio:
             bad_klass.append(True)
 
         if len(bad_klass) > 0:
@@ -351,7 +364,7 @@ for idx, row in valve_metadata.iterrows():
             vav_df['color'] = '#5ab300'
             vav_df.loc[bad_vlv.index, 'color'] = '#b3005a'
 
-        _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_tc['25%'], df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
+        _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=long_tc['25%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
 
         # # get a detailed report of the when valve is malfunctioning
         # lal = bad_vlv.groupby('same')
