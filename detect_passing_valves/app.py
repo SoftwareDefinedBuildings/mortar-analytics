@@ -191,8 +191,8 @@ def calc_long_t_diff(vav_df, vlv_open=False):
 def _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=None, long_tbad=None, df_fit=None, bad_ratio=None, folder='./'):
     # plot temperature difference vs valve position
     fig, ax = plt.subplots(figsize=(8,4.5))
-    ax.set_ylabel('Temperature difference')
-    ax.set_xlabel('Valve pct opened')
+    ax.set_ylabel('Temperature difference [°F]')
+    ax.set_xlabel('Valve opened [%]')
     ax.set_title("Valve = {}\nVAV = {}".format(row['vav_vlv'], row['vav']), loc='left')
 
     if 'color' in vav_df.columns:
@@ -214,7 +214,7 @@ def _make_tdiff_vs_vlvpo_plot(vav_df, row, long_t=None, long_tbad=None, df_fit=N
     if bad_ratio is not None:
         # add ratio where presumably passing valve
         y_max = vav_df['temp_diff'].max()
-        ax.text(.2, 0.95*y_max, "bad ratio={:.1f}%".format(bad_ratio))
+        ax.text(.2, 0.95*y_max, "Bad ratio={:.1f}%".format(bad_ratio))
 
     plt_name = "{}-{}-{}".format(row['site'], row['vav'], row['vav_vlv'])
     plt.savefig(join(folder, plt_name + '.png'))
