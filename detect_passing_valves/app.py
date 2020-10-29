@@ -12,43 +12,42 @@ from scipy.optimize import curve_fit
 eval_start_time  = "2018-01-01T00:00:00Z"
 eval_end_time    = "2018-06-30T00:00:00Z"
 
-
 client = pymortar.Client()
 
 # define query to return valves
 # returns supply air temps from ahu and vav and vav valve
 vav_query = """SELECT *
 WHERE {
-    ?vav        rdf:type/rdfs:subClassOf? brick:VAV .
-    ?vav        bf:isFedBy+                 ?ahu .
-    ?vav_vlv    rdf:type                    ?vlv_type .
-    ?ahu        bf:hasPoint                 ?ahu_supply .
-    ?vav        bf:hasPoint                 ?vav_supply .
-    ?ahu_supply rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-    ?vav_supply rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-    ?vav        bf:hasPoint                 ?vav_vlv .
-    ?vav_vlv    rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+    ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
+    ?equip        bf:isFedBy+                 ?ahu .
+    ?vlv          rdf:type                    ?vlv_type .
+    ?ahu          bf:hasPoint                 ?ahu_supply .
+    ?equip        bf:hasPoint                 ?vav_supply .
+    ?ahu_supply   rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+    ?vav_supply   rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+    ?equip        bf:hasPoint                 ?vlv .
+    ?vlv          rdf:type/rdfs:subClassOf*   brick:Valve_Command .
 };"""
 
 ahu_sa_query = """SELECT *
 WHERE {
-    ?ahu_vlv    rdf:type/rdfs:subClassOf*   brick:Valve_Command .
-    ?ahu_vlv    rdf:type                    ?vlv_type .
-    ?ahu        bf:hasPoint                 ?ahu_vlv .
-    ?ahu        rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
+    ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+    ?vlv        rdf:type                    ?vlv_type .
+    ?equip        bf:hasPoint                 ?vlv .
+    ?equip        rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
     ?air_temps  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-    ?ahu        bf:hasPoint                 ?air_temps .
+    ?equip        bf:hasPoint                 ?air_temps .
     ?air_temps  rdf:type                    ?temp_type .
 };"""
 
 ahu_ra_query = """SELECT *
 WHERE {
-    ?ahu_vlv    rdf:type/rdfs:subClassOf*   brick:Valve_Command .
-    ?ahu_vlv    rdf:type                    ?vlv_type .
-    ?ahu        bf:hasPoint                 ?ahu_vlv .
-    ?ahu        rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
+    ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+    ?vlv        rdf:type                    ?vlv_type .
+    ?equip        bf:hasPoint                 ?vlv .
+    ?equip        rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
     ?air_temps  rdf:type/rdfs:subClassOf*   brick:Return_Air_Temperature_Sensor .
-    ?ahu        bf:hasPoint                 ?air_temps .
+    ?equip        bf:hasPoint                 ?air_temps .
     ?air_temps  rdf:type                    ?temp_type .
 };"""
 
@@ -86,7 +85,7 @@ vav_request = pymortar.FetchRequest(
             timeseries=[
                 pymortar.Timeseries(
                     view="vav_temps",
-                    dataVars=["?vav_vlv"],
+                    dataVars=["?vlv"],
                 )
             ]
         ),
@@ -120,30 +119,110 @@ vav_request = pymortar.FetchRequest(
 )
 
 
-# call the fetch api
-fetch_resp = client.fetch(request)
-print(fetch_resp)
-print(fetch_resp.view('valves'))
+# build the fetch request
+ahu_request = pymortar.FetchRequest(
+    sites=ahu_sites,
+    views=[
+        pymortar.View(
+            name="ahu_sa_temp",
+            definition=ahu_sa_query,
+        ),
+        pymortar.View(
+            name="ahu_ra_temp",
+            definition=ahu_ra_query,
+        ),
+    ],
+    dataFrames=[
+        pymortar.DataFrame(
+            name="ahu_valve",
+            aggregation=pymortar.MEAN,
+            window="15m",
+            timeseries=[
+                pymortar.Timeseries(
+                    view="ahu_sa_temp",
+                    dataVars=["?vlv"],
+                )
+            ]
+        ),
+        pymortar.DataFrame(
+            name="ahu_sa_temp",
+            aggregation=pymortar.MEAN,
+            window="15m",
+            timeseries=[
+                pymortar.Timeseries(
+                    view="ahu_sa_temp",
+                    dataVars=["?air_temps"],
+                )
+            ]
+        ),
+        pymortar.DataFrame(
+            name="ahu_ra_temp",
+            aggregation=pymortar.MEAN,
+            window="15m",
+            timeseries=[
+                pymortar.Timeseries(
+                    view="ahu_ra_temp",
+                    dataVars=["?air_temps"],
+                )
+            ]
+        ),
+    ],
+    time=pymortar.TimeParams(
+        start=eval_start_time,
+        end=eval_end_time,
+    )
+)
 
+def _clean_ahu_view(fetch_resp_ahu):
+    # supply air temp metadata
+    ahu_sa = fetch_resp_ahu.view('ahu_sa_temp')
+    ahu_sa = ahu_sa.rename(columns={'air_temps': 'dnstream_ta', 'temp_type': 'supply type', 'air_temps_uuid': 'dnstream_ta uuid'})
+
+    # return air temp metadata
+    ahu_ra = fetch_resp_ahu.view('ahu_ra_temp')
+    ahu_ra = ahu_ra.rename(columns={'air_temps': 'upstream_ta', 'temp_type': 'return type', 'air_temps_uuid': 'upstream_ta uuid'})
+
+    # join supply and return air temperature data into on dataset
+    ahu_metadata = ahu_sa.merge(ahu_ra, on=['vlv', 'equip', 'vlv_type', 'site'], how='inner')
+
+    # delete cooling valve commands
+    heat_vlv = [x not in ['Cooling_Valve_Command'] for x in ahu_metadata['vlv_type']]
+
+    return ahu_metadata[heat_vlv]
+
+# call the fetch api for VAV data
+fetch_resp_vav = client.fetch(vav_request)
+
+print("-----Dataframe for VAV valves-----")
+print(fetch_resp_vav)
+print(fetch_resp_vav.view('vav_temps'))
+
+# call the fetch api for AHU data
+fetch_resp_ahu = client.fetch(ahu_request)
+ahu_metadata = _clean_ahu_view(fetch_resp_ahu)
+
+print("-----Dataframe for AHU valves-----")
+print(fetch_resp_ahu)
+print(ahu_metadata)
 
 # print the different types of valves in the data
 #print(fetch_resp.view('valves').groupby(['vlv_subclass']).count())
 
-def _clean(row):
+def _clean_vav(row):
 
     # combine data points in one dataframe
-    vav_sa = fetch_resp['vav_temp'][row['vav_supply_uuid']]
-    ahu_sa = fetch_resp['ahu_temp'][row['ahu_supply_uuid']]
-    vlv_po = fetch_resp['valve'][row['vav_vlv_uuid']]
+    vav_sa = fetch_resp_vav['vav_temp'][row['vav_supply_uuid']]
+    ahu_sa = fetch_resp_vav['ahu_temp'][row['ahu_supply_uuid']]
+    vlv_po = fetch_resp_vav['vav_valve'][row['vlv_uuid']]
 
     vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
-    vav_df.columns = ['ahu_sa', 'vav_sa', 'vlv_po']
+    vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
 
     # identify when valve is open
     vav_df['vlv_open'] = vav_df['vlv_po'] > 0
 
-    # calculate temperature difference between ahu and vav supply air
-    vav_df['temp_diff'] = vav_df['vav_sa'] - vav_df['ahu_sa']
+    # calculate temperature difference between downstream and upstream air
+    vav_df['temp_diff'] = vav_df['dnstream_ta'] - vav_df['upstream_ta']
 
     # drop na
     vav_df = vav_df.dropna()
@@ -152,6 +231,29 @@ def _clean(row):
     vav_df = vav_df[vav_df['temp_diff'] >= 0]
 
     return vav_df
+
+def _clean_ahu(row):
+    dnstream = fetch_resp_ahu['ahu_sa_temp'][row['dnstream_ta uuid']]
+    upstream = fetch_resp_ahu['ahu_ra_temp'][row['upstream_ta uuid']]
+
+    vlv_po = fetch_resp_ahu['ahu_valve'][row['vlv_uuid']]
+
+    ahu_df = pd.concat([upstream, dnstream, vlv_po], axis=1)
+    ahu_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
+
+    # identify when valve is open
+    ahu_df['vlv_open'] = ahu_df['vlv_po'] > 0
+
+    # calculate temperature difference between downstream and upstream air
+    ahu_df['temp_diff'] = ahu_df['dnstream_ta'] - ahu_df['upstream_ta']
+
+    # drop na
+    ahu_df = ahu_df.dropna()
+
+    # drop values where vav supply air is less than ahu supply air
+    #ahu_df = ahu_df[ahu_df['temp_diff'] >= 0]
+
+    return ahu_df
 
 
 def scale_0to1(temp_diff):
@@ -221,7 +323,7 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
     fig, ax = plt.subplots(figsize=(8,4.5))
     ax.set_ylabel('Temperature difference [°F]')
     ax.set_xlabel('Valve opened [%]')
-    ax.set_title("Valve = {}\nVAV = {}".format(row['vav_vlv'], row['vav']), loc='left')
+    ax.set_title("Valve = {}\nEquip. = {}".format(row['vlv'], row['equip']), loc='left')
 
     if 'color' in vlv_df.columns:
         ax.scatter(x=vlv_df['vlv_po'], y=vlv_df['temp_diff'], color = vlv_df['color'], alpha=1/3, s=10)
@@ -244,8 +346,9 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
         y_max = vlv_df['temp_diff'].max()
         ax.text(.2, 0.95*y_max, "Bad ratio={:.1f}%".format(bad_ratio))
 
-    plt_name = "{}-{}-{}".format(row['site'], row['vav'], row['vav_vlv'])
+    plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
     plt.savefig(join(folder, plt_name + '.png'))
+    plt.close()
 
 def return_exceedance(vlv_df, long_t, th_time=45, window=15):
     # find datapoints that exceed long-term temperature difference
@@ -281,12 +384,137 @@ def check_folder_exist(folder):
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-bad_folder = './bad_valves'
-good_folder = './good_valves'
+def _analyze_vav(vlv_df, row, bad_folder = './bad_valves', good_folder = './good_valves'):
 
-# check if holding folders exist
-check_folder_exist(bad_folder)
-check_folder_exist(good_folder)
+    # check if holding folders exist
+    check_folder_exist(bad_folder)
+    check_folder_exist(good_folder)
+
+    if vlv_df.shape[0] == 0:
+        print("'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site']))
+        return
+
+    # determine if valve datastream has open and closed data
+    bool_type = vlv_df['vlv_open'].value_counts().index
+
+    bad_vlv_val = 5
+
+    if len(bool_type) < 2:
+        if bool_type[0]:
+            # only open valve data
+            long_to = calc_long_t_diff(vlv_df, vlv_open=True)
+            if long_to['50%'] < bad_vlv_val:
+                print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vlv'], row['site']))
+                _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_to['50%'], folder=bad_folder)
+        else:
+            # only closed valve data
+            long_tc = calc_long_t_diff(vlv_df)
+            if long_tc['50%'] > bad_vlv_val:
+                print("Probable passing valve '{}' in site {}".format(row['vlv'], row['site']))
+                _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=bad_folder)
+        return
+
+    # calculate long-term temp diff when valve is closed
+    bad_klass = []
+    long_tc = calc_long_t_diff(vlv_df)
+    long_to = calc_long_t_diff(vlv_df, vlv_open=True)
+
+
+    # make a simple comparison of between long-term open and long-term closed temp diff
+    if (long_tc['mean'] + long_tc['std']) > long_to['mean']:
+        print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
+        bad_klass.append(True)
+
+    # assume a 0 deg difference at 0% open valve
+    no_zeros_po = vlv_df.copy()
+    no_zeros_po.loc[no_zeros_po['vlv_po'] == 0, 'temp_diff'] = 0
+
+    # # make a logit regression model based on a threshold value
+    # # compare long-term average with actual temp diff
+    # no_zeros_po['sig_diff'] = (no_zeros_po.loc[:, 'temp_diff'] > long_tc['50%']).astype(int)
+
+    # df_fit_sig = get_fit_line(no_zeros_po, x_col='vlv_po', y_col='sig_diff')
+    # df_fit_sig['y_fitted'] = rescale_fit(df_fit_sig['y_fitted'], no_zeros_po['temp_diff'])
+
+    # est_lt_diff_sig = df_fit_sig[df_fit_sig['vlv_po'] == 0]['y_fitted'].mean()
+    # bad_vlv = return_exceedance(vlv_df, est_lt_diff_sig, th_time=45, window=15)
+
+    # make a logit regression model assuming that closed valves make a zero temp difference
+    try:
+        df_fit_nz = get_fit_line(no_zeros_po)
+    except RuntimeError:
+        df_fit_nz = None
+
+    # determine estimated long-term difference
+    if df_fit_nz is not None:
+        est_lt_diff_nz = df_fit_nz[df_fit_nz['vlv_po'] == 0]['y_fitted'].mean()
+    else:
+        est_lt_diff_nz = long_tc['25%']
+
+    # calculate bad valve instances vs overall dataframe
+    th_ratio = 20
+    bad_vlv = return_exceedance(vlv_df, est_lt_diff_nz, th_time=45, window=15)
+
+    if bad_vlv is None:
+        bad_ratio = 0
+        long_tbad = long_tc['mean']
+    else:
+        bad_ratio = 100*(bad_vlv.shape[0]/vlv_df.shape[0])
+        long_tbad = bad_vlv['temp_diff'].describe()['mean']
+
+    if df_fit_nz is not None:
+        est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
+    else:
+        est_leak = bad_ratio
+
+    if est_leak > th_ratio:
+        bad_klass.append(True)
+
+    if len(bad_klass) > 0:
+        folder = bad_folder
+        if bad_ratio > 5:
+            print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
+            if len(bad_klass) > 1:
+                print("{} percentage of time is leaking!".format(bad_ratio))
+        else:
+            folder = good_folder
+    else:
+        folder = good_folder
+
+    if bad_vlv is not None:
+        # colorize good and bad points
+        vlv_df['color'] = '#5ab300'
+        vlv_df.loc[bad_vlv.index, 'color'] = '#b3005a'
+
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['25%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
+
+    # # get a detailed report of the when valve is malfunctioning
+    # lal = bad_vlv.groupby('same')
+    # grps = list(lal.groups.keys())
+    # bad_vlv.loc[lal.groups[grps[0]]]
+
+
+    # # logit fit with limited points
+    # df_fit = try_limit_dat_fit_model(vlv_df, df_fraction=1)
+
+def _analyze_ahu(vlv_df, row):
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, folder='./')
+
+def analyze(metadata, clean_func, analyze_func):
+    # analyze valves
+    for idx, row in metadata.iterrows():
+        try:
+            # clean data
+            vlv_df = clean_func(row)
+
+            # analyze for passing valves
+            analyze_func(vlv_df, row)
+
+        except:
+            print("Error try to debug")
+            print(sys.exc_info()[0])
+            import pdb; pdb.set_trace()
+            continue
 
 vav_metadata = fetch_resp_vav.view('vav_temps')
 
@@ -294,118 +522,10 @@ vav_metadata = fetch_resp_vav.view('vav_temps')
 # idx = vav_metadata[vav_metadata['vav'] == 'VAVRM4314'].index[0]
 # row = vav_metadata.iloc[idx]
 
+# analyze VAV valves
+analyze(vav_metadata, _clean_vav, _analyze_vav)
+
+# analyze AHU valves
+analyze(ahu_metadata, _clean_ahu, _analyze_ahu)
+
 import pdb; pdb.set_trace()
-
-for idx, row in vav_metadata.iterrows():
-    try:
-        # clean data
-        vlv_df = _clean_vav(row)
-
-        if vlv_df.shape[0] == 0:
-            print("'{}' in site {} has no data! Skipping...".format(row['vav_vlv'], row['site']))
-            continue
-
-        # determine if valve datastream has open and closed data
-        bool_type = vlv_df['vlv_open'].value_counts().index
-
-        bad_vlv_val = 5
-
-        if len(bool_type) < 2:
-            if bool_type[0]:
-                # only open valve data
-                long_to = calc_long_t_diff(vlv_df, vlv_open=True)
-                if long_to['50%'] < bad_vlv_val:
-                    print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vav_vlv'], row['site']))
-                    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_to['50%'], folder=bad_folder)
-            else:
-                # only closed valve data
-                long_tc = calc_long_t_diff(vlv_df)
-                if long_tc['50%'] > bad_vlv_val:
-                    print("Probable passing valve '{}' in site {}".format(row['vav_vlv'], row['site']))
-                    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=bad_folder)
-            continue
-
-        # calculate long-term temp diff when valve is closed
-        bad_klass = []
-        long_tc = calc_long_t_diff(vlv_df)
-        long_to = calc_long_t_diff(vlv_df, vlv_open=True)
-
-
-        # make a simple comparison of between long-term open and long-term closed temp diff
-        if (long_tc['mean'] + long_tc['std']) > long_to['mean']:
-            print("Probable passing valve '{}' in site {}\n".format(row['vav_vlv'], row['site']))
-            bad_klass.append(True)
-
-        # assume a 0 deg difference at 0% open valve
-        no_zeros_po = vlv_df.copy()
-        no_zeros_po.loc[no_zeros_po['vlv_po'] == 0, 'temp_diff'] = 0
-
-        # # make a logit regression model based on a threshold value
-        # # compare long-term average with actual temp diff
-        # no_zeros_po['sig_diff'] = (no_zeros_po.loc[:, 'temp_diff'] > long_tc['50%']).astype(int)
-
-        # df_fit_sig = get_fit_line(no_zeros_po, x_col='vlv_po', y_col='sig_diff')
-        # df_fit_sig['y_fitted'] = rescale_fit(df_fit_sig['y_fitted'], no_zeros_po['temp_diff'])
-
-        # est_lt_diff_sig = df_fit_sig[df_fit_sig['vlv_po'] == 0]['y_fitted'].mean()
-        # bad_vlv = return_exceedance(vlv_df, est_lt_diff_sig, th_time=45, window=15)
-
-        # make a logit regression model assuming that closed valves make a zero temp difference
-        try:
-            df_fit_nz = get_fit_line(no_zeros_po)
-        except RuntimeError:
-            df_fit_nz = None
-
-        # determine estimated long-term difference
-        if df_fit_nz is not None:
-            est_lt_diff_nz = df_fit_nz[df_fit_nz['vlv_po'] == 0]['y_fitted'].mean()
-        else:
-            est_lt_diff_nz = long_tc['25%']
-
-        # calculate bad valve instances vs overall dataframe
-        th_ratio = 20
-        bad_vlv = return_exceedance(vlv_df, est_lt_diff_nz, th_time=45, window=15)
-
-        if bad_vlv is None:
-            bad_ratio = 0
-            long_tbad = long_tc['mean']
-        else:
-            bad_ratio = 100*(bad_vlv.shape[0]/vlv_df.shape[0])
-            long_tbad = bad_vlv['temp_diff'].describe()['mean']
-
-        if df_fit_nz is not None:
-            est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
-        else:
-            est_leak = bad_ratio
-
-        if est_leak > th_ratio:
-            bad_klass.append(True)
-
-        if len(bad_klass) > 0:
-            folder = bad_folder
-            print("Probable passing valve '{}' in site {}\n".format(row['vav_vlv'], row['site']))
-            if len(bad_klass) > 1:
-                print("{} percentage of time is leaking!".format(bad_ratio))
-        else:
-            folder = good_folder
-
-        if bad_vlv is not None:
-            # colorize good and bad points
-            vlv_df['color'] = '#5ab300'
-            vlv_df.loc[bad_vlv.index, 'color'] = '#b3005a'
-
-        _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['25%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
-
-        # # get a detailed report of the when valve is malfunctioning
-        # lal = bad_vlv.groupby('same')
-        # grps = list(lal.groups.keys())
-        # bad_vlv.loc[lal.groups[grps[0]]]
-
-
-        # # logit fit with limited points
-        # df_fit = try_limit_dat_fit_model(vlv_df, df_fraction=1)
-    except:
-        print("Error try to debug")
-        print(sys.exc_info()[0])
-        import pdb; pdb.set_trace()
-        continue
