@@ -184,7 +184,6 @@ def _clean_ahu_view(fetch_resp_ahu):
 
     # join supply and return air temperature data into on dataset
     ahu_metadata = ahu_sa.merge(ahu_ra, on=['vlv', 'equip', 'vlv_type', 'site'], how='inner')
-<<<<<<< HEAD
 
     # delete cooling valve commands
     heat_vlv = [x not in ['Cooling_Valve_Command'] for x in ahu_metadata['vlv_type']]
@@ -202,25 +201,6 @@ print(fetch_resp_vav.view('vav_temps'))
 fetch_resp_ahu = client.fetch(ahu_request)
 ahu_metadata = _clean_ahu_view(fetch_resp_ahu)
 
-=======
-
-    # delete cooling valve commands
-    heat_vlv = [x not in ['Cooling_Valve_Command'] for x in ahu_metadata['vlv_type']]
-
-    return ahu_metadata[heat_vlv]
-
-# call the fetch api for VAV data
-fetch_resp_vav = client.fetch(vav_request)
-
-print("-----Dataframe for VAV valves-----")
-print(fetch_resp_vav)
-print(fetch_resp_vav.view('vav_temps'))
-
-# call the fetch api for AHU data
-fetch_resp_ahu = client.fetch(ahu_request)
-ahu_metadata = _clean_ahu_view(fetch_resp_ahu)
-
->>>>>>> ffcd9fe1b8b703cbff23469474caf404e3d1ab91
 print("-----Dataframe for AHU valves-----")
 print(fetch_resp_ahu)
 print(ahu_metadata)
@@ -405,7 +385,6 @@ def check_folder_exist(folder):
         os.makedirs(folder)
 
 def _analyze_vav(vlv_df, row, bad_folder = './bad_valves', good_folder = './good_valves'):
-<<<<<<< HEAD
 
     # check if holding folders exist
     check_folder_exist(bad_folder)
@@ -420,22 +399,6 @@ def _analyze_vav(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
 
     bad_vlv_val = 5
 
-=======
-
-    # check if holding folders exist
-    check_folder_exist(bad_folder)
-    check_folder_exist(good_folder)
-
-    if vlv_df.shape[0] == 0:
-        print("'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site']))
-        return
-
-    # determine if valve datastream has open and closed data
-    bool_type = vlv_df['vlv_open'].value_counts().index
-
-    bad_vlv_val = 5
-
->>>>>>> ffcd9fe1b8b703cbff23469474caf404e3d1ab91
     if len(bool_type) < 2:
         if bool_type[0]:
             # only open valve data
