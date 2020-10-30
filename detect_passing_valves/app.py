@@ -482,7 +482,6 @@ def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
     # bad_vlv.loc[lal.groups[grps[0]]]
 
 def _analyze_ahu(vlv_df, row):
-    import pdb; pdb.set_trace()
 
     if row['upstream_type'] != 'Mixed_Air_Temperature_Sensor':
         print('No upstream sensor data available for coil in AHU {} for site {}'.format(row['equip'], row['site']))
