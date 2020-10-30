@@ -21,10 +21,10 @@ WHERE {
     ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
     ?equip        bf:isFedBy+                 ?ahu .
     ?vlv          rdf:type                    ?vlv_type .
-    ?ahu          bf:hasPoint                 ?ahu_supply .
-    ?equip        bf:hasPoint                 ?vav_supply .
-    ?ahu_supply   rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-    ?vav_supply   rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+    ?ahu          bf:hasPoint                 ?upstream_ta .
+    ?equip        bf:hasPoint                 ?dnstream_ta .
+    ?upstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+    ?dnstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
     ?equip        bf:hasPoint                 ?vlv .
     ?vlv          rdf:type/rdfs:subClassOf*   brick:Valve_Command .
 };"""
@@ -33,10 +33,10 @@ ahu_sa_query = """SELECT *
 WHERE {
     ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
     ?vlv        rdf:type                    ?vlv_type .
-    ?equip        bf:hasPoint                 ?vlv .
-    ?equip        rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
+    ?equip      bf:hasPoint                 ?vlv .
+    ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
     ?air_temps  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-    ?equip        bf:hasPoint                 ?air_temps .
+    ?equip      bf:hasPoint                 ?air_temps .
     ?air_temps  rdf:type                    ?temp_type .
 };"""
 
@@ -44,10 +44,10 @@ ahu_ra_query = """SELECT *
 WHERE {
     ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
     ?vlv        rdf:type                    ?vlv_type .
-    ?equip        bf:hasPoint                 ?vlv .
-    ?equip        rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
+    ?equip      bf:hasPoint                 ?vlv .
+    ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
     ?air_temps  rdf:type/rdfs:subClassOf*   brick:Return_Air_Temperature_Sensor .
-    ?equip        bf:hasPoint                 ?air_temps .
+    ?equip      bf:hasPoint                 ?air_temps .
     ?air_temps  rdf:type                    ?temp_type .
 };"""
 
@@ -73,41 +73,41 @@ vav_request = pymortar.FetchRequest(
     sites=qualify_vav_resp.sites,
     views=[
         pymortar.View(
-            name="vav_temps",
+            name="dnstream_ta",
             definition=vav_query,
         ),
     ],
     dataFrames=[
         pymortar.DataFrame(
-            name="vav_valve",
+            name="vlv",
             aggregation=pymortar.MEAN,
             window="15m",
             timeseries=[
                 pymortar.Timeseries(
-                    view="vav_temps",
+                    view="dnstream_ta",
                     dataVars=["?vlv"],
                 )
             ]
         ),
         pymortar.DataFrame(
-            name="vav_temp",
+            name="dnstream_ta",
             aggregation=pymortar.MEAN,
             window="15m",
             timeseries=[
                 pymortar.Timeseries(
-                    view="vav_temps",
-                    dataVars=["?vav_supply"],
+                    view="dnstream_ta",
+                    dataVars=["?dnstream_ta"],
                 )
             ]
         ),
         pymortar.DataFrame(
-            name="ahu_temp",
+            name="upstream_ta",
             aggregation=pymortar.MEAN,
             window="15m",
             timeseries=[
                 pymortar.Timeseries(
-                    view="vav_temps",
-                    dataVars=["?ahu_supply"],
+                    view="dnstream_ta",
+                    dataVars=["?upstream_ta"],
                 )
             ]
         ),
@@ -124,11 +124,11 @@ ahu_request = pymortar.FetchRequest(
     sites=ahu_sites,
     views=[
         pymortar.View(
-            name="ahu_sa_temp",
+            name="dnstream_ta",
             definition=ahu_sa_query,
         ),
         pymortar.View(
-            name="ahu_ra_temp",
+            name="upstream_ta",
             definition=ahu_ra_query,
         ),
     ],
@@ -139,29 +139,29 @@ ahu_request = pymortar.FetchRequest(
             window="15m",
             timeseries=[
                 pymortar.Timeseries(
-                    view="ahu_sa_temp",
+                    view="dnstream_ta",
                     dataVars=["?vlv"],
                 )
             ]
         ),
         pymortar.DataFrame(
-            name="ahu_sa_temp",
+            name="dnstream_ta",
             aggregation=pymortar.MEAN,
             window="15m",
             timeseries=[
                 pymortar.Timeseries(
-                    view="ahu_sa_temp",
+                    view="dnstream_ta",
                     dataVars=["?air_temps"],
                 )
             ]
         ),
         pymortar.DataFrame(
-            name="ahu_ra_temp",
+            name="upstream_ta",
             aggregation=pymortar.MEAN,
             window="15m",
             timeseries=[
                 pymortar.Timeseries(
-                    view="ahu_ra_temp",
+                    view="upstream_ta",
                     dataVars=["?air_temps"],
                 )
             ]
@@ -175,12 +175,12 @@ ahu_request = pymortar.FetchRequest(
 
 def _clean_ahu_view(fetch_resp_ahu):
     # supply air temp metadata
-    ahu_sa = fetch_resp_ahu.view('ahu_sa_temp')
-    ahu_sa = ahu_sa.rename(columns={'air_temps': 'dnstream_ta', 'temp_type': 'supply type', 'air_temps_uuid': 'dnstream_ta uuid'})
+    ahu_sa = fetch_resp_ahu.view('dnstream_ta')
+    ahu_sa = ahu_sa.rename(columns={'air_temps': 'dnstream_ta', 'temp_type': 'dnstream_ta', 'air_temps_uuid': 'dnstream_ta uuid'})
 
     # return air temp metadata
-    ahu_ra = fetch_resp_ahu.view('ahu_ra_temp')
-    ahu_ra = ahu_ra.rename(columns={'air_temps': 'upstream_ta', 'temp_type': 'return type', 'air_temps_uuid': 'upstream_ta uuid'})
+    ahu_ra = fetch_resp_ahu.view('upstream_ta')
+    ahu_ra = ahu_ra.rename(columns={'air_temps': 'upstream_ta', 'temp_type': 'upstream_type', 'air_temps_uuid': 'upstream_ta uuid'})
 
     # join supply and return air temperature data into on dataset
     ahu_metadata = ahu_sa.merge(ahu_ra, on=['vlv', 'equip', 'vlv_type', 'site'], how='inner')
@@ -195,7 +195,7 @@ fetch_resp_vav = client.fetch(vav_request)
 
 print("-----Dataframe for VAV valves-----")
 print(fetch_resp_vav)
-print(fetch_resp_vav.view('vav_temps'))
+print(fetch_resp_vav.view('dnstream_ta'))
 
 # call the fetch api for AHU data
 fetch_resp_ahu = client.fetch(ahu_request)
@@ -205,15 +205,13 @@ print("-----Dataframe for AHU valves-----")
 print(fetch_resp_ahu)
 print(ahu_metadata)
 
-# print the different types of valves in the data
-#print(fetch_resp.view('valves').groupby(['vlv_subclass']).count())
 
 def _clean_vav(row):
 
     # combine data points in one dataframe
-    vav_sa = fetch_resp_vav['vav_temp'][row['vav_supply_uuid']]
-    ahu_sa = fetch_resp_vav['ahu_temp'][row['ahu_supply_uuid']]
-    vlv_po = fetch_resp_vav['vav_valve'][row['vlv_uuid']]
+    vav_sa = fetch_resp_vav['dnstream_ta'][row['dnstream_ta_uuid']]
+    ahu_sa = fetch_resp_vav['upstream_ta'][row['upstream_ta_uuid']]
+    vlv_po = fetch_resp_vav['vlv'][row['vlv_uuid']]
 
     vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
     vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
@@ -233,8 +231,8 @@ def _clean_vav(row):
     return vav_df
 
 def _clean_ahu(row):
-    dnstream = fetch_resp_ahu['ahu_sa_temp'][row['dnstream_ta uuid']]
-    upstream = fetch_resp_ahu['ahu_ra_temp'][row['upstream_ta uuid']]
+    dnstream = fetch_resp_ahu['dnstream_ta'][row['dnstream_ta uuid']]
+    upstream = fetch_resp_ahu['upstream_ta'][row['upstream_ta uuid']]
 
     vlv_po = fetch_resp_ahu['ahu_valve'][row['vlv_uuid']]
 
@@ -384,7 +382,7 @@ def check_folder_exist(folder):
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-def _analyze_vav(vlv_df, row, bad_folder = './bad_valves', good_folder = './good_valves'):
+def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good_valves'):
 
     # check if holding folders exist
     check_folder_exist(bad_folder)
@@ -428,16 +426,6 @@ def _analyze_vav(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
     # assume a 0 deg difference at 0% open valve
     no_zeros_po = vlv_df.copy()
     no_zeros_po.loc[no_zeros_po['vlv_po'] == 0, 'temp_diff'] = 0
-
-    # # make a logit regression model based on a threshold value
-    # # compare long-term average with actual temp diff
-    # no_zeros_po['sig_diff'] = (no_zeros_po.loc[:, 'temp_diff'] > long_tc['50%']).astype(int)
-
-    # df_fit_sig = get_fit_line(no_zeros_po, x_col='vlv_po', y_col='sig_diff')
-    # df_fit_sig['y_fitted'] = rescale_fit(df_fit_sig['y_fitted'], no_zeros_po['temp_diff'])
-
-    # est_lt_diff_sig = df_fit_sig[df_fit_sig['vlv_po'] == 0]['y_fitted'].mean()
-    # bad_vlv = return_exceedance(vlv_df, est_lt_diff_sig, th_time=45, window=15)
 
     # make a logit regression model assuming that closed valves make a zero temp difference
     try:
@@ -488,17 +476,20 @@ def _analyze_vav(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
 
     _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['25%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
 
-    # # get a detailed report of the when valve is malfunctioning
+    # TODO get a detailed report of the when valve is malfunctioning
     # lal = bad_vlv.groupby('same')
     # grps = list(lal.groups.keys())
     # bad_vlv.loc[lal.groups[grps[0]]]
 
-
-    # # logit fit with limited points
-    # df_fit = try_limit_dat_fit_model(vlv_df, df_fraction=1)
-
 def _analyze_ahu(vlv_df, row):
-    _make_tdiff_vs_vlvpo_plot(vlv_df, row, folder='./')
+    import pdb; pdb.set_trace()
+
+    if row['upstream_type'] != 'Mixed_Air_Temperature_Sensor':
+        print('No upstream sensor data available for coil in AHU {} for site {}'.format(row['equip'], row['site']))
+        #_make_tdiff_vs_vlvpo_plot(vlv_df, row, folder='./')
+    else:
+        _analyze_vlv(vlv_df, row)
+
 
 def analyze(metadata, clean_func, analyze_func):
     # analyze valves
@@ -516,14 +507,10 @@ def analyze(metadata, clean_func, analyze_func):
             import pdb; pdb.set_trace()
             continue
 
-vav_metadata = fetch_resp_vav.view('vav_temps')
-
-# import pdb; pdb.set_trace()
-# idx = vav_metadata[vav_metadata['vav'] == 'VAVRM4314'].index[0]
-# row = vav_metadata.iloc[idx]
+vav_metadata = fetch_resp_vav.view('dnstream_ta')
 
 # analyze VAV valves
-analyze(vav_metadata, _clean_vav, _analyze_vav)
+analyze(vav_metadata, _clean_vav, _analyze_vlv)
 
 # analyze AHU valves
 analyze(ahu_metadata, _clean_ahu, _analyze_ahu)
