@@ -86,15 +86,15 @@ def _query_and_qualify():
 
     # save queries
     query['query'] = dict()
-    query['query']['vav'] = qualify_vav_resp
-    query['query']['ahu_sa'] = qualify_sa_resp
-    query['query']['ahu_ra'] = qualify_ra_resp
+    query['query']['vav'] = vav_query
+    query['query']['ahu_sa'] = ahu_sa_query
+    query['query']['ahu_ra'] = ahu_ra_query
 
     # save qualify responses
     query['qualify'] = dict()
-    query['qualify']['vav'] = vav_query
-    query['qualify']['ahu_sa'] = ahu_sa_query
-    query['qualify']['ahu_ra'] = ahu_ra_query
+    query['qualify']['vav'] = qualify_vav_resp
+    query['qualify']['ahu_sa'] = qualify_sa_resp
+    query['qualify']['ahu_ra'] = qualify_ra_resp
 
     # save sites
     query['sites'] = dict()
