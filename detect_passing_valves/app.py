@@ -12,69 +12,114 @@ from scipy.optimize import curve_fit
 eval_start_time  = "2018-01-01T00:00:00Z"
 eval_end_time    = "2018-06-30T00:00:00Z"
 
+def _query_and_qualify():
+    """
+    Build query to return control valves, up- and down- stream air temperatures relative to the
+    valve, and other related data. Then qualify which sites can run this app.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    query: dictionary containing query, sites, and qualify response
+
+    """
+
+    # connect to client
+    client = pymortar.Client()
+
+    # initialize container for query information
+    query = dict()
+
+    # define query to analyze VAV valves
+    vav_query = """SELECT *
+    WHERE {
+        ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
+        ?equip        bf:isFedBy+                 ?ahu .
+        ?vlv          rdf:type                    ?vlv_type .
+        ?ahu          bf:hasPoint                 ?upstream_ta .
+        ?equip        bf:hasPoint                 ?dnstream_ta .
+        ?upstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+        ?dnstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+        ?equip        bf:hasPoint                 ?vlv .
+        ?vlv          rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+    };"""
+
+    # define queries to analyze AHU valves
+    ahu_sa_query = """SELECT *
+    WHERE {
+        ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+        ?vlv        rdf:type                    ?vlv_type .
+        ?equip      bf:hasPoint                 ?vlv .
+        ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
+        ?air_temps  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+        ?equip      bf:hasPoint                 ?air_temps .
+        ?air_temps  rdf:type                    ?temp_type .
+    };"""
+
+    ahu_ra_query = """SELECT *
+    WHERE {
+        ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+        ?vlv        rdf:type                    ?vlv_type .
+        ?equip      bf:hasPoint                 ?vlv .
+        ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
+        ?air_temps  rdf:type/rdfs:subClassOf*   brick:Return_Air_Temperature_Sensor .
+        ?equip      bf:hasPoint                 ?air_temps .
+        ?air_temps  rdf:type                    ?temp_type .
+    };"""
+
+    # find sites with these sensors and setpoints
+    qualify_vav_resp = client.qualify([vav_query])
+    qualify_sa_resp = client.qualify([ahu_sa_query])
+    qualify_ra_resp = client.qualify([ahu_ra_query])
+
+    if qualify_vav_resp.error != "":
+        print("ERROR: ", qualify_vav_resp.error)
+        sys.exit(1)
+    elif len(qualify_vav_resp.sites) == 0:
+        print("NO SITES RETURNED")
+        sys.exit(0)
+
+    vav_sites = qualify_vav_resp.sites
+    ahu_sites = np.intersect1d(qualify_sa_resp.sites, qualify_ra_resp.sites)
+    tlt_sites = np.union1d(vav_sites, ahu_sites)
+    print("running on {0} sites".format(len(tlt_sites)))
+
+    # save queries
+    query['query'] = dict()
+    query['query']['vav'] = qualify_vav_resp
+    query['query']['ahu_sa'] = qualify_sa_resp
+    query['query']['ahu_ra'] = qualify_ra_resp
+
+    # save qualify responses
+    query['qualify'] = dict()
+    query['qualify']['vav'] = vav_query
+    query['qualify']['ahu_sa'] = ahu_sa_query
+    query['qualify']['ahu_ra'] = ahu_ra_query
+
+    # save sites
+    query['sites'] = dict()
+    query['sites']['vav'] = vav_sites
+    query['sites']['ahu'] = ahu_sites
+    query['sites']['tlt'] = tlt_sites
+
+    return query
+
+# build query and qualify
+query = _query_and_qualify()
+
+# connect to client
 client = pymortar.Client()
-
-# define query to return valves
-# returns supply air temps from ahu and vav and vav valve
-vav_query = """SELECT *
-WHERE {
-    ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
-    ?equip        bf:isFedBy+                 ?ahu .
-    ?vlv          rdf:type                    ?vlv_type .
-    ?ahu          bf:hasPoint                 ?upstream_ta .
-    ?equip        bf:hasPoint                 ?dnstream_ta .
-    ?upstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-    ?dnstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-    ?equip        bf:hasPoint                 ?vlv .
-    ?vlv          rdf:type/rdfs:subClassOf*   brick:Valve_Command .
-};"""
-
-ahu_sa_query = """SELECT *
-WHERE {
-    ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
-    ?vlv        rdf:type                    ?vlv_type .
-    ?equip      bf:hasPoint                 ?vlv .
-    ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
-    ?air_temps  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-    ?equip      bf:hasPoint                 ?air_temps .
-    ?air_temps  rdf:type                    ?temp_type .
-};"""
-
-ahu_ra_query = """SELECT *
-WHERE {
-    ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
-    ?vlv        rdf:type                    ?vlv_type .
-    ?equip      bf:hasPoint                 ?vlv .
-    ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
-    ?air_temps  rdf:type/rdfs:subClassOf*   brick:Return_Air_Temperature_Sensor .
-    ?equip      bf:hasPoint                 ?air_temps .
-    ?air_temps  rdf:type                    ?temp_type .
-};"""
-
-# find sites with these sensors and setpoints
-qualify_vav_resp = client.qualify([vav_query])
-qualify_sa_resp = client.qualify([ahu_sa_query])
-qualify_ra_resp = client.qualify([ahu_ra_query])
-
-if qualify_vav_resp.error != "":
-    print("ERROR: ", qualify_vav_resp.error)
-    sys.exit(1)
-elif len(qualify_vav_resp.sites) == 0:
-    print("NO SITES RETURNED")
-    sys.exit(0)
-
-vav_sites = qualify_vav_resp.sites
-ahu_sites = np.intersect1d(qualify_sa_resp.sites, qualify_ra_resp.sites)
-tlt_sites = np.union1d(vav_sites, ahu_sites)
-print("running on {0} sites".format(len(tlt_sites)))
 
 # build the fetch request
 vav_request = pymortar.FetchRequest(
-    sites=qualify_vav_resp.sites,
+    sites=query['sites']['vav'],
     views=[
         pymortar.View(
             name="dnstream_ta",
-            definition=vav_query,
+            definition=query['query']['vav'],
         ),
     ],
     dataFrames=[
@@ -121,15 +166,15 @@ vav_request = pymortar.FetchRequest(
 
 # build the fetch request
 ahu_request = pymortar.FetchRequest(
-    sites=ahu_sites,
+    sites=query['sites']['ahu'],
     views=[
         pymortar.View(
             name="dnstream_ta",
-            definition=ahu_sa_query,
+            definition=query['query']['ahu_sa'],
         ),
         pymortar.View(
             name="upstream_ta",
-            definition=ahu_ra_query,
+            definition=query['query']['ahu_ra'],
         ),
     ],
     dataFrames=[
