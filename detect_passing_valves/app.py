@@ -119,7 +119,7 @@ def _fetch(query, eval_start_time, eval_end_time, window=15):
     eval_end_time : end date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
                     comfort evaluation period
 
-    window : aggregation window in minutes to average the measurement data
+    window : aggregation window, in minutes, to average the raw measurement data
 
 
     Returns
@@ -292,7 +292,8 @@ def reformat_ahu_view(fetch_resp_ahu):
 def _clean_vav(fetch_resp, row):
     """
     Make a pandas dataframe with relavent vav data for the specific valve 
-    and clean from NA values.
+    and clean from NA values. Calculate temperature difference between
+    downstream and upstream air temperatures.
 
     Parameters
     ----------
@@ -367,38 +368,101 @@ def _clean_ahu(fetch_resp, row):
     return ahu_df
 
 
-def scale_0to1(temp_diff):
-    max_t = temp_diff.max()
-    min_t = temp_diff.min()
+######
+# define tools
+# TODO: Separate the tools into a new python file
+######
 
-    new_t = (temp_diff - min_t) / (max_t - min_t)
+def scale_0to1(vals):
+    """
+    Scale pandas series object data from 0 to 1
 
-    return new_t
+    Parameters
+    ----------
+    vals: Pandas series object or Pandas dataframe colum to scale from 0 to 1.
 
-def rescale_fit(scaled_x, temp_diff):
-    max_t = temp_diff.max()
-    min_t = temp_diff.min()
+    Returns
+    -------
+    scaled_vals: Pandas series object with values scaled from 0 to 1
+    """
 
-    rescaled = min_t + scaled_x*(max_t - min_t)
+    max_val = vals.max()
+    min_val = vals.min()
 
-    return rescaled
+    scaled_vals = (vals - min_val) / (max_val - min_val)
+
+    return scaled_vals
+
+
+def rescale_fit(scaled_vals, vals):
+    """
+    Rescale values of pandas series that are 0 to 1 to match the interval
+    of another pandas series object values
+
+    Parameters
+    ----------
+    scaled_vals: Pandas series object with values scaled from 0 to 1 and needs to be unscaled
+
+    vals: Pandas series object or Pandas dataframe colum with unnormalized values.
+          This is used to extract max and min to unscaled the scaled_vals.
+
+    Returns
+    -------
+    unscaled_vals: Pandas series object of unscaled values
+    """
+    max_val = vals.max()
+    min_val = vals.min()
+
+    unscaled_vals = min_val + scaled_vals*(max_val - min_val)
+
+    return unscaled_vals
+
 
 def sigmoid(x, k, x0):
+    """
+    Sigmoid function curve to do a logistic model
+
+    Parameters
+    ----------
+    x: independent variable
+    k: slope of the sigmoid function
+    x0: midpoint of the sigmoid function
+
+    Returns
+    -------
+    y: value of the function at point x
+    """
     return 1.0 / (1 + np.exp(-k * (x - x0)))
 
-def get_fit_line(vlv_df, x_col='vlv_po', y_col='temp_diff'):
+def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff'):
+    """
+    Build a logistic model with data provided
+
+    Parameters
+    ----------
+    df: Pandas dataframe object with x and y variables to make model
+
+    x_col: column name that contains x, independent, variable
+
+    y_col: column name that contains y, dependent, variable
+
+    Returns
+    -------
+    df_fit: Pandas dataframe object with y_fitted values to a logistic model
+    """
+
     # fit the curve
-    scaled_pos = scale_0to1(vlv_df[x_col])
-    scaled_t = scale_0to1(vlv_df[y_col])
+    scaled_pos = scale_0to1(df[x_col])
+    scaled_t = scale_0to1(df[y_col])
     popt, pcov = curve_fit(sigmoid, scaled_pos, scaled_t)
 
     # calculate fitted temp difference values
     est_k, est_x0 = popt
-    y_fitted = rescale_fit(sigmoid(scaled_pos, est_k, est_x0), vlv_df[y_col])
+    y_fitted = rescale_fit(sigmoid(scaled_pos, est_k, est_x0), df[y_col])
     y_fitted.name = 'y_fitted'
 
     # sort values
-    df_fit = pd.concat([vlv_df[x_col], y_fitted], axis=1)
+    df_fit = pd.concat([df[x_col], y_fitted], axis=1)
     df_fit = df_fit.sort_values(by=x_col)
 
     return df_fit
@@ -408,16 +472,48 @@ def try_limit_dat_fit_model(vlv_df, df_fraction):
     nrows, ncols = vlv_df.shape
     some_pts = np.random.choice(nrows, int(nrows*df_fraction))
     try:
-        df_fit = get_fit_line(vlv_df.iloc[some_pts])
+        df_fit = build_logistic_model(vlv_df.iloc[some_pts])
     except RuntimeError:
         try:
-            df_fit = get_fit_line(vlv_df)
+            df_fit = build_logistic_model(vlv_df)
         except RuntimeError:
             print("No regression found")
             df_fit = None
     return df_fit
 
+
+def check_folder_exist(folder):
+    """
+    Check the existance of the defined folder. If it does
+    not exist, then create folder.
+
+    Parameters
+    ----------
+    folder: name of path to check its existance
+
+    Returns
+    -------
+    None
+    """
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
 def calc_long_t_diff(vlv_df, vlv_open=False):
+    """
+    Calculate statistic on difference between down- and up-
+    stream temperatures to determine the long term temperature difference.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    vlv_open: boolean define if the statistics are performed on data that has
+              valve open (True) or closed (False)
+
+    Returns
+    -------
+    long_t: dictionary object with statisitics of temperature difference
+    """
     if vlv_open:
         # long-term average when valve is open
         df_vlv_close = vlv_df[vlv_df['vlv_open']]
@@ -430,6 +526,33 @@ def calc_long_t_diff(vlv_df, vlv_open=False):
     return long_t
 
 def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=None, bad_ratio=None, folder='./'):
+    """
+    Make plot showing the correct and bad operating points of the valve control along with helper annotations 
+    e.g. long term average for correct and malfunction operating points when valve is commanded off, model fit, and
+    bad to good operating points.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    long_t: long-term temperature difference between down and up air streams when valve is 
+            commanded close for correct operation
+
+    long_tbad: long-term temperature difference between down and up air streams when valve is 
+            commanded close for malfunction operation
+
+    df_fit: Pandas dataframe object with y_fitted values to a logistic model
+
+    bad_ratio: ratio showing the mulfunction operation points to good operation points
+
+    folder: name of path to save the plot image
+
+    Returns
+    -------
+    None
+    """
     # plot temperature difference vs valve position
     fig, ax = plt.subplots(figsize=(8,4.5))
     ax.set_ylabel('Temperature difference [°F]')
@@ -461,7 +584,29 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
     plt.savefig(join(folder, plt_name + '.png'))
     plt.close()
 
-def return_exceedance(vlv_df, long_t, th_time=45, window=15):
+
+def find_bad_vlv_operation(vlv_df, long_t, th_time=45, window=15):
+    """
+
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    long_t: long-term temperature difference between down and up air streams when valve is 
+            commanded close for correct operation
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+            valve operating point is malfunctioning e.g. allow enough time for residue heat to
+            dissipate from the coil.
+
+    window : aggregation window, in minutes, to average the raw measurement data
+
+    Returns
+    -------
+    bad_vlv: pandas dataframe object with the time intervals that the valve is malfunctioning
+    """
+
     # find datapoints that exceed long-term temperature difference
     min_ts = int(th_time/window)
     th_exceed = np.logical_and((vlv_df['temp_diff'] >= long_t), ~(vlv_df['vlv_open']))
@@ -491,9 +636,6 @@ def return_exceedance(vlv_df, long_t, th_time=45, window=15):
 
     return bad_vlv.drop(columns=['cons_ts'])
 
-def check_folder_exist(folder):
-    if not os.path.exists(folder):
-        os.makedirs(folder)
 
 def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good_valves'):
 
@@ -542,7 +684,7 @@ def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
 
     # make a logit regression model assuming that closed valves make a zero temp difference
     try:
-        df_fit_nz = get_fit_line(no_zeros_po)
+        df_fit_nz = build_logistic_model(no_zeros_po)
     except RuntimeError:
         df_fit_nz = None
 
@@ -554,7 +696,7 @@ def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
 
     # calculate bad valve instances vs overall dataframe
     th_ratio = 20
-    bad_vlv = return_exceedance(vlv_df, est_lt_diff_nz, th_time=45, window=15)
+    bad_vlv = find_bad_vlv_operation(vlv_df, est_lt_diff_nz, th_time=45, window=15)
 
     if bad_vlv is None:
         bad_ratio = 0
