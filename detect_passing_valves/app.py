@@ -637,7 +637,30 @@ def find_bad_vlv_operation(vlv_df, long_t, th_time=45, window=15):
     return bad_vlv.drop(columns=['cons_ts'])
 
 
-def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good_valves'):
+def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valves', bad_folder='./bad_valves'):
+    """
+    Analyze each valve and detect for passing valves
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+        valve operating point is malfunctioning e.g. allow enough time for residue heat to
+        dissipate from the coil.
+
+    good_folder: name of path showing the folder to save the plots of the correct operating valves
+
+    bad_folder: name of path showing the folder to save the plots of the malfunction valves
+
+    Returns
+    -------
+    None
+    """
 
     # check if holding folders exist
     check_folder_exist(bad_folder)
@@ -650,19 +673,17 @@ def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
     # determine if valve datastream has open and closed data
     bool_type = vlv_df['vlv_open'].value_counts().index
 
-    bad_vlv_val = 5
-
     if len(bool_type) < 2:
         if bool_type[0]:
             # only open valve data
             long_to = calc_long_t_diff(vlv_df, vlv_open=True)
-            if long_to['50%'] < bad_vlv_val:
+            if long_to['50%'] < th_bad_vlv:
                 print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vlv'], row['site']))
                 _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_to['50%'], folder=bad_folder)
         else:
             # only closed valve data
             long_tc = calc_long_t_diff(vlv_df)
-            if long_tc['50%'] > bad_vlv_val:
+            if long_tc['50%'] > th_bad_vlv:
                 print("Probable passing valve '{}' in site {}".format(row['vlv'], row['site']))
                 _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=bad_folder)
         return
@@ -696,7 +717,7 @@ def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
 
     # calculate bad valve instances vs overall dataframe
     th_ratio = 20
-    bad_vlv = find_bad_vlv_operation(vlv_df, est_lt_diff_nz, th_time=45, window=15)
+    bad_vlv = find_bad_vlv_operation(vlv_df, est_lt_diff_nz, th_time, window)
 
     if bad_vlv is None:
         bad_ratio = 0
@@ -736,16 +757,64 @@ def _analyze_vlv(vlv_df, row, bad_folder = './bad_valves', good_folder = './good
     # grps = list(lal.groups.keys())
     # bad_vlv.loc[lal.groups[grps[0]]]
 
-def _analyze_ahu(vlv_df, row):
+def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder):
+    """
+    Helper function to analyze AHU valves
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+            valve operating point is malfunctioning e.g. allow enough time for residue heat to
+            dissipate from the coil.
+
+    good_folder: name of path showing the folder to save the plots of the correct operating valves
+
+    bad_folder: name of path showing the folder to save the plots of the malfunction valves
+
+    Returns
+    -------
+    None
+    """
 
     if row['upstream_type'] != 'Mixed_Air_Temperature_Sensor':
         print('No upstream sensor data available for coil in AHU {} for site {}'.format(row['equip'], row['site']))
         #_make_tdiff_vs_vlvpo_plot(vlv_df, row, folder='./')
     else:
-        _analyze_vlv(vlv_df, row)
+        _analyze_vlv(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder)
 
 
-def analyze(metadata, clean_func, analyze_func):
+def _analyze(metadata, clean_func, analyze_func, th_bad_vlv, th_time, good_folder, bad_folder):
+    """
+    Hi level analyze function that runs through each valve queried to detect passing valves
+
+    Parameters
+    ----------
+    metadata: metadata, i.e. view, for the valves that need to be analyzed
+
+    clean_func: specific clean function for the valve in the equipment
+
+    analyze_func: specific analyze function for the valve in the equipment
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+            valve operating point is malfunctioning e.g. allow enough time for residue heat to
+            dissipate from the coil.
+
+    good_folder: name of path showing the folder to save the plots of the correct operating valves
+
+    bad_folder: name of path showing the folder to save the plots of the malfunction valves
+
+    Returns
+    -------
+    None
+    """
     # analyze valves
     for idx, row in metadata.iterrows():
         try:
@@ -753,7 +822,7 @@ def analyze(metadata, clean_func, analyze_func):
             vlv_df = clean_func(row)
 
             # analyze for passing valves
-            analyze_func(vlv_df, row)
+            analyze_func(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder)
 
         except:
             print("Error try to debug")
@@ -761,17 +830,59 @@ def analyze(metadata, clean_func, analyze_func):
             import pdb; pdb.set_trace()
             continue
 
-# define parameters
-eval_start_time  = "2018-01-01T00:00:00Z"
-eval_end_time    = "2018-06-30T00:00:00Z"
+def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, good_folder, bad_folder):
+    """
+    Main function that runs all the steps of the application
 
-query = _query_and_qualify()
-fetch_resp = _fetch(query, eval_start_time, eval_end_time, window=15)
+    Parameters
+    ----------
+    query: dictionary containing query, sites, and qualify response
 
-# analyze VAV valves
-vav_metadata = fetch_resp['vav'].view('dnstream_ta')
-analyze(vav_metadata, _clean_vav, _analyze_vlv)
+    eval_start_time : start date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                      comfort evaluation period
 
-# analyze AHU valves
-ahu_metadata = reformat_ahu_view(fetch_resp['ahu'])
-analyze(ahu_metadata, _clean_ahu, _analyze_ahu)
+    eval_end_time : end date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                    comfort evaluation period
+
+    window : aggregation window, in minutes, to average the raw measurement data
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+            valve operating point is malfunctioning e.g. allow enough time for residue heat to
+            dissipate from the coil.
+
+    good_folder: name of path showing the folder to save the plots of the correct operating valves
+
+    bad_folder: name of path showing the folder to save the plots of the malfunction valves
+
+
+
+    Returns
+    -------
+    None
+    """
+    query = _query_and_qualify()
+    fetch_resp = _fetch(query, eval_start_time, eval_end_time, window)
+
+    # analyze VAV valves
+    vav_metadata = fetch_resp['vav'].view('dnstream_ta')
+    _analyze(vav_metadata, _clean_vav, _analyze_vlv, th_bad_vlv, th_time, good_folder, bad_folder)
+
+    # analyze AHU valves
+    ahu_metadata = reformat_ahu_view(fetch_resp['ahu'])
+    _analyze(ahu_metadata, _clean_ahu, _analyze_ahu, th_bad_vlv, th_time, good_folder, bad_folder)
+
+
+if __name__ == '__main__':
+    # define parameters
+    eval_start_time  = "2018-01-01T00:00:00Z"
+    eval_end_time    = "2018-06-30T00:00:00Z"
+    window = 15
+    th_bad_vlv = 5
+    th_time = 45
+    good_folder = './good_valves'
+    bad_folder = './bad_valves'
+
+    # Run the app
+    detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, good_folder, bad_folder)
