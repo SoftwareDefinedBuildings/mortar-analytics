@@ -290,6 +290,21 @@ def reformat_ahu_view(fetch_resp_ahu):
 
 
 def _clean_vav(fetch_resp, row):
+    """
+    Make a pandas dataframe with relavent vav data for the specific valve 
+    and clean from NA values.
+
+    Parameters
+    ----------
+    fetch_resp : Mortar FetchResponse object
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    Returns
+    -------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    """
 
     # combine data points in one dataframe
     vav_sa = fetch_resp['vav']['dnstream_ta'][row['dnstream_ta_uuid']]
@@ -314,6 +329,21 @@ def _clean_vav(fetch_resp, row):
     return vav_df
 
 def _clean_ahu(fetch_resp, row):
+    """
+    Make a pandas dataframe with relavent ahu data for the specific valve 
+    and clean from NA values.
+
+    Parameters
+    ----------
+    fetch_resp : Mortar FetchResponse object
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    Returns
+    -------
+    ahu_df: Pandas dataframe with valve timeseries data
+
+    """
     dnstream = fetch_resp['ahu']['dnstream_ta'][row['dnstream_ta uuid']]
     upstream = fetch_resp['ahu']['upstream_ta'][row['upstream_ta uuid']]
 
