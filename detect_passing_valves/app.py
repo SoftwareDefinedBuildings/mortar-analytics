@@ -8,9 +8,6 @@ from os.path import join
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
-# define parameters
-eval_start_time  = "2018-01-01T00:00:00Z"
-eval_end_time    = "2018-06-30T00:00:00Z"
 
 def _query_and_qualify():
     """
@@ -107,118 +104,174 @@ def _query_and_qualify():
 
     return query
 
-# build query and qualify
-query = _query_and_qualify()
 
-# connect to client
-client = pymortar.Client()
+def _fetch(query, eval_start_time, eval_end_time, window=15):
+    """
+    Build the fetch query and define the time interval for analysis
 
-# build the fetch request
-vav_request = pymortar.FetchRequest(
-    sites=query['sites']['vav'],
-    views=[
-        pymortar.View(
-            name="dnstream_ta",
-            definition=query['query']['vav'],
-        ),
-    ],
-    dataFrames=[
-        pymortar.DataFrame(
-            name="vlv",
-            aggregation=pymortar.MEAN,
-            window="15m",
-            timeseries=[
-                pymortar.Timeseries(
-                    view="dnstream_ta",
-                    dataVars=["?vlv"],
-                )
-            ]
-        ),
-        pymortar.DataFrame(
-            name="dnstream_ta",
-            aggregation=pymortar.MEAN,
-            window="15m",
-            timeseries=[
-                pymortar.Timeseries(
-                    view="dnstream_ta",
-                    dataVars=["?dnstream_ta"],
-                )
-            ]
-        ),
-        pymortar.DataFrame(
-            name="upstream_ta",
-            aggregation=pymortar.MEAN,
-            window="15m",
-            timeseries=[
-                pymortar.Timeseries(
-                    view="dnstream_ta",
-                    dataVars=["?upstream_ta"],
-                )
-            ]
-        ),
-    ],
-    time=pymortar.TimeParams(
-        start=eval_start_time,
-        end=eval_end_time,
+    Parameters
+    ----------
+    query: dictionary containing query, sites, and qualify response
+
+    eval_start_time : start date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                      comfort evaluation period
+
+    eval_end_time : end date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                    comfort evaluation period
+
+    window : aggregation window in minutes to average the measurement data
+
+
+    Returns
+    -------
+    fetch_resp : Mortar FetchResponse object
+
+    """
+
+    # connect to client
+    client = pymortar.Client()
+
+    # build the fetch request for the vav valves
+    vav_request = pymortar.FetchRequest(
+        sites=query['sites']['vav'],
+        views=[
+            pymortar.View(
+                name="dnstream_ta",
+                definition=query['query']['vav'],
+            ),
+        ],
+        dataFrames=[
+            pymortar.DataFrame(
+                name="vlv",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?vlv"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="dnstream_ta",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?dnstream_ta"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="upstream_ta",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?upstream_ta"],
+                    )
+                ]
+            ),
+        ],
+        time=pymortar.TimeParams(
+            start=eval_start_time,
+            end=eval_end_time,
+        )
     )
-)
 
 
-# build the fetch request
-ahu_request = pymortar.FetchRequest(
-    sites=query['sites']['ahu'],
-    views=[
-        pymortar.View(
-            name="dnstream_ta",
-            definition=query['query']['ahu_sa'],
-        ),
-        pymortar.View(
-            name="upstream_ta",
-            definition=query['query']['ahu_ra'],
-        ),
-    ],
-    dataFrames=[
-        pymortar.DataFrame(
-            name="ahu_valve",
-            aggregation=pymortar.MEAN,
-            window="15m",
-            timeseries=[
-                pymortar.Timeseries(
-                    view="dnstream_ta",
-                    dataVars=["?vlv"],
-                )
-            ]
-        ),
-        pymortar.DataFrame(
-            name="dnstream_ta",
-            aggregation=pymortar.MEAN,
-            window="15m",
-            timeseries=[
-                pymortar.Timeseries(
-                    view="dnstream_ta",
-                    dataVars=["?air_temps"],
-                )
-            ]
-        ),
-        pymortar.DataFrame(
-            name="upstream_ta",
-            aggregation=pymortar.MEAN,
-            window="15m",
-            timeseries=[
-                pymortar.Timeseries(
-                    view="upstream_ta",
-                    dataVars=["?air_temps"],
-                )
-            ]
-        ),
-    ],
-    time=pymortar.TimeParams(
-        start=eval_start_time,
-        end=eval_end_time,
+    # build the fetch request for the ahu valves
+    ahu_request = pymortar.FetchRequest(
+        sites=query['sites']['ahu'],
+        views=[
+            pymortar.View(
+                name="dnstream_ta",
+                definition=query['query']['ahu_sa'],
+            ),
+            pymortar.View(
+                name="upstream_ta",
+                definition=query['query']['ahu_ra'],
+            ),
+        ],
+        dataFrames=[
+            pymortar.DataFrame(
+                name="ahu_valve",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?vlv"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="dnstream_ta",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?air_temps"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="upstream_ta",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="upstream_ta",
+                        dataVars=["?air_temps"],
+                    )
+                ]
+            ),
+        ],
+        time=pymortar.TimeParams(
+            start=eval_start_time,
+            end=eval_end_time,
+        )
     )
-)
 
-def _clean_ahu_view(fetch_resp_ahu):
+    # call the fetch api for VAV data
+    fetch_resp_vav = client.fetch(vav_request)
+
+    print("-----Dataframe for VAV valves-----")
+    print(fetch_resp_vav)
+    print(fetch_resp_vav.view('dnstream_ta'))
+
+    # call the fetch api for AHU data
+    fetch_resp_ahu = client.fetch(ahu_request)
+    ahu_metadata = reformat_ahu_view(fetch_resp_ahu)
+
+    print("-----Dataframe for AHU valves-----")
+    print(fetch_resp_ahu)
+    print(ahu_metadata)
+
+    # save fetch responses
+    fetch_resp = dict()
+    fetch_resp['vav'] = fetch_resp_vav
+    fetch_resp['ahu'] = fetch_resp_ahu
+
+    return fetch_resp
+
+
+def reformat_ahu_view(fetch_resp_ahu):
+    """
+    Rename, reformat, and delete cooling valves from ahu metadata
+
+    Parameters
+    ----------
+    fetch_resp_ahu : Mortar FetchResponse object for AHU data
+
+    Returns
+    -------
+    ahu_metadata: Pandas object with AHU metadata and no valves used for cooling
+
+    """
     # supply air temp metadata
     ahu_sa = fetch_resp_ahu.view('dnstream_ta')
     ahu_sa = ahu_sa.rename(columns={'air_temps': 'dnstream_ta', 'temp_type': 'dnstream_ta', 'air_temps_uuid': 'dnstream_ta uuid'})
@@ -235,28 +288,13 @@ def _clean_ahu_view(fetch_resp_ahu):
 
     return ahu_metadata[heat_vlv]
 
-# call the fetch api for VAV data
-fetch_resp_vav = client.fetch(vav_request)
 
-print("-----Dataframe for VAV valves-----")
-print(fetch_resp_vav)
-print(fetch_resp_vav.view('dnstream_ta'))
-
-# call the fetch api for AHU data
-fetch_resp_ahu = client.fetch(ahu_request)
-ahu_metadata = _clean_ahu_view(fetch_resp_ahu)
-
-print("-----Dataframe for AHU valves-----")
-print(fetch_resp_ahu)
-print(ahu_metadata)
-
-
-def _clean_vav(row):
+def _clean_vav(fetch_resp, row):
 
     # combine data points in one dataframe
-    vav_sa = fetch_resp_vav['dnstream_ta'][row['dnstream_ta_uuid']]
-    ahu_sa = fetch_resp_vav['upstream_ta'][row['upstream_ta_uuid']]
-    vlv_po = fetch_resp_vav['vlv'][row['vlv_uuid']]
+    vav_sa = fetch_resp['vav']['dnstream_ta'][row['dnstream_ta_uuid']]
+    ahu_sa = fetch_resp['vav']['upstream_ta'][row['upstream_ta_uuid']]
+    vlv_po = fetch_resp['vav']['vlv'][row['vlv_uuid']]
 
     vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
     vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
@@ -275,11 +313,11 @@ def _clean_vav(row):
 
     return vav_df
 
-def _clean_ahu(row):
-    dnstream = fetch_resp_ahu['dnstream_ta'][row['dnstream_ta uuid']]
-    upstream = fetch_resp_ahu['upstream_ta'][row['upstream_ta uuid']]
+def _clean_ahu(fetch_resp, row):
+    dnstream = fetch_resp['ahu']['dnstream_ta'][row['dnstream_ta uuid']]
+    upstream = fetch_resp['ahu']['upstream_ta'][row['upstream_ta uuid']]
 
-    vlv_po = fetch_resp_ahu['ahu_valve'][row['vlv_uuid']]
+    vlv_po = fetch_resp['ahu']['ahu_valve'][row['vlv_uuid']]
 
     ahu_df = pd.concat([upstream, dnstream, vlv_po], axis=1)
     ahu_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
@@ -551,10 +589,17 @@ def analyze(metadata, clean_func, analyze_func):
             import pdb; pdb.set_trace()
             continue
 
-vav_metadata = fetch_resp_vav.view('dnstream_ta')
+# define parameters
+eval_start_time  = "2018-01-01T00:00:00Z"
+eval_end_time    = "2018-06-30T00:00:00Z"
+
+query = _query_and_qualify()
+fetch_resp = _fetch(query, eval_start_time, eval_end_time, window=15)
 
 # analyze VAV valves
+vav_metadata = fetch_resp['vav'].view('dnstream_ta')
 analyze(vav_metadata, _clean_vav, _analyze_vlv)
 
 # analyze AHU valves
+ahu_metadata = reformat_ahu_view(fetch_resp['ahu'])
 analyze(ahu_metadata, _clean_ahu, _analyze_ahu)
