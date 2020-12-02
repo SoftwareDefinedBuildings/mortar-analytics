@@ -1,12 +1,5 @@
-# Detect passing valves in VAV terminals
+# Detect passing valves in HVAC equipment
 
-This app detects valves that do not close all the way also known as passing valves.
+This app detects valves in HVAC equipment that do not close fully even when actuated to a fully closed position, also known as “passing valves”. The application compares fluid temperatures upstream and downstream from the valve and calculates the expected long-term difference between the two fluid streams when the valve is currently closed, and has been closed for some time. The app then analyzes the expected trends with the actual data to determine if the valve is in good operating condition or malfunctioning.
 
-This app produces a CSV file called `passing_valves.csv` when run. Each row is a possible incidence of a passing valve. The CSV file contains the following columns:
-
-- site
-- valve name
-- start of incident
-- end of incident
-- expected temperature difference
-- actual temperature difference
+This app produces a plot for each analyzed valve with file name formatted as `<site name>-<equipment name>-<valve name>.png` when run. Each plot shows a solid green horizontal line that represents the average temperature difference between the downstream and upstream fluids when valve is commanded closed, a dashed purple line shows the expected correct operating behavior trend of the valve (based on the green points), a solid pink horizontal line shows the average temperature difference when the application detected a possible  passing valve (based on the red points). The ‘Bad ratio’ value is a ratio of the number of bad operating point values to goodoperating point values. Each file is either allocated in a 'good' or 'bad' folder depending if the analyzed valve is operating correctly (good folder) or malfunctioning (bad folder).
