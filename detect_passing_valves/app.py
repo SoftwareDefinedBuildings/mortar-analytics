@@ -289,7 +289,7 @@ def reformat_ahu_view(fetch_resp_ahu):
     return ahu_metadata[heat_vlv]
 
 
-def _clean_vav(fetch_resp, row):
+def _clean_vav(fetch_resp_vav, row):
     """
     Make a pandas dataframe with relavent vav data for the specific valve 
     and clean from NA values. Calculate temperature difference between
@@ -297,7 +297,7 @@ def _clean_vav(fetch_resp, row):
 
     Parameters
     ----------
-    fetch_resp : Mortar FetchResponse object
+    fetch_resp_vav : Mortar FetchResponse object for the vav data
 
     row: Pandas series object with metadata for the specific vav valve
 
@@ -308,9 +308,9 @@ def _clean_vav(fetch_resp, row):
     """
 
     # combine data points in one dataframe
-    vav_sa = fetch_resp['vav']['dnstream_ta'][row['dnstream_ta_uuid']]
-    ahu_sa = fetch_resp['vav']['upstream_ta'][row['upstream_ta_uuid']]
-    vlv_po = fetch_resp['vav']['vlv'][row['vlv_uuid']]
+    vav_sa = fetch_resp_vav['dnstream_ta'][row['dnstream_ta_uuid']]
+    ahu_sa = fetch_resp_vav['upstream_ta'][row['upstream_ta_uuid']]
+    vlv_po = fetch_resp_vav['vlv'][row['vlv_uuid']]
 
     vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
     vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
@@ -329,14 +329,14 @@ def _clean_vav(fetch_resp, row):
 
     return vav_df
 
-def _clean_ahu(fetch_resp, row):
+def _clean_ahu(fetch_resp_ahu, row):
     """
     Make a pandas dataframe with relavent ahu data for the specific valve 
     and clean from NA values.
 
     Parameters
     ----------
-    fetch_resp : Mortar FetchResponse object
+    fetch_resp_ahu : Mortar FetchResponse object for the AHU data
 
     row: Pandas series object with metadata for the specific vav valve
 
@@ -345,10 +345,10 @@ def _clean_ahu(fetch_resp, row):
     ahu_df: Pandas dataframe with valve timeseries data
 
     """
-    dnstream = fetch_resp['ahu']['dnstream_ta'][row['dnstream_ta uuid']]
-    upstream = fetch_resp['ahu']['upstream_ta'][row['upstream_ta uuid']]
+    dnstream = fetch_resp_ahu['dnstream_ta'][row['dnstream_ta uuid']]
+    upstream = fetch_resp_ahu['upstream_ta'][row['upstream_ta uuid']]
 
-    vlv_po = fetch_resp['ahu']['ahu_valve'][row['vlv_uuid']]
+    vlv_po = fetch_resp_ahu['ahu_valve'][row['vlv_uuid']]
 
     ahu_df = pd.concat([upstream, dnstream, vlv_po], axis=1)
     ahu_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
@@ -789,13 +789,15 @@ def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder):
         _analyze_vlv(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder)
 
 
-def _analyze(metadata, clean_func, analyze_func, th_bad_vlv, th_time, good_folder, bad_folder):
+def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time, good_folder, bad_folder):
     """
     Hi level analyze function that runs through each valve queried to detect passing valves
 
     Parameters
     ----------
     metadata: metadata, i.e. view, for the valves that need to be analyzed
+
+    fetch_resp : Mortar FetchResponse object
 
     clean_func: specific clean function for the valve in the equipment
 
@@ -819,7 +821,7 @@ def _analyze(metadata, clean_func, analyze_func, th_bad_vlv, th_time, good_folde
     for idx, row in metadata.iterrows():
         try:
             # clean data
-            vlv_df = clean_func(row)
+            vlv_df = clean_func(fetch_resp, row)
 
             # analyze for passing valves
             analyze_func(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder)
@@ -867,11 +869,11 @@ def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th
 
     # analyze VAV valves
     vav_metadata = fetch_resp['vav'].view('dnstream_ta')
-    _analyze(vav_metadata, _clean_vav, _analyze_vlv, th_bad_vlv, th_time, good_folder, bad_folder)
+    _analyze(vav_metadata, fetch_resp['vav'], _clean_vav, _analyze_vlv, th_bad_vlv, th_time, good_folder, bad_folder)
 
     # analyze AHU valves
     ahu_metadata = reformat_ahu_view(fetch_resp['ahu'])
-    _analyze(ahu_metadata, _clean_ahu, _analyze_ahu, th_bad_vlv, th_time, good_folder, bad_folder)
+    _analyze(ahu_metadata, fetch_resp['ahu'], _clean_ahu, _analyze_ahu, th_bad_vlv, th_time, good_folder, bad_folder)
 
 
 if __name__ == '__main__':
