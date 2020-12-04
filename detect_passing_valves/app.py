@@ -327,7 +327,47 @@ def _clean_vav(fetch_resp_vav, row):
     # drop values where vav supply air is less than ahu supply air
     vav_df = vav_df[vav_df['temp_diff'] >= 0]
 
+    # drop values outside occupancy hours
+    # TODO: retrieve HVAC status to subset df when fan is operating
+    vav_df = occupied_hours_subset(vav_df, occ_str=6, occ_end=18, wkend_str=5)
+
     return vav_df
+
+def occupied_hours_subset(df, occ_str, occ_end, wkend_str=5, timestamp_col=None):
+    """
+    Returns data containing values during building occupancy of Pandas DataFrame
+
+    Parameters
+    ----------
+    df: Pandas dataframe object with timeseries data
+
+    occ_str: float number indicating start of building occupancy
+
+    occ_end: float number indicating end of building occupancy
+
+    wkend_str: int number indicating start of weekend. 5 indicates Saturday and 6 indicates Sunday
+
+    timestamp_col: If timeseries object is not defined in the index of the pandas dataframe then 
+            input the column name containing the timeseries
+
+    Returns
+    -------
+    df_is_occupied: Pandas dataframe with data values during building occupancy hours
+    """
+    # define the timeseries data
+    if timestamp_col is None:
+        df_ts = df.index
+    else:
+        df_ts = df[timestamp_col]
+
+    bool_str_hr = (df_ts.hour + df_ts.minute/60.0) >= occ_str
+    bool_end_hr = (df_ts.hour + df_ts.minute/60.0) <= occ_end
+    bool_is_weekday = df_ts.weekday < 5 # 5 and 6 are Sat and Sun, respectively
+
+    is_occupied = np.logical_and(bool_str_hr, bool_end_hr, bool_is_weekday)
+
+    return df[is_occupied]
+
 
 def _clean_ahu(fetch_resp_ahu, row):
     """
@@ -361,6 +401,9 @@ def _clean_ahu(fetch_resp_ahu, row):
 
     # drop na
     ahu_df = ahu_df.dropna()
+
+    # drop values outside occupancy hours
+    ahu_df = occupied_hours_subset(ahu_df, occ_str=6, occ_end=18, wkend_str=5)
 
     # drop values where vav supply air is less than ahu supply air
     #ahu_df = ahu_df[ahu_df['temp_diff'] >= 0]
