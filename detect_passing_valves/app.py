@@ -44,6 +44,13 @@ def _query_and_qualify():
         ?vlv          rdf:type/rdfs:subClassOf*   brick:Valve_Command .
     };"""
 
+    fan_query = """SELECT *
+    WHERE {
+        ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
+        ?equip        bf:hasPoint                 ?air_flow .
+        ?air_flow     rdf:type/rdfs:subClassOf*   brick:Supply_Air_Flow_Sensor .
+    };"""
+
     # define queries to analyze AHU valves
     ahu_sa_query = """SELECT *
     WHERE {
@@ -71,6 +78,7 @@ def _query_and_qualify():
     qualify_vav_resp = client.qualify([vav_query])
     qualify_sa_resp = client.qualify([ahu_sa_query])
     qualify_ra_resp = client.qualify([ahu_ra_query])
+    qualify_fan_resp = client.qualify([fan_query])
 
     if qualify_vav_resp.error != "":
         print("ERROR: ", qualify_vav_resp.error)
@@ -89,12 +97,14 @@ def _query_and_qualify():
     query['query']['vav'] = vav_query
     query['query']['ahu_sa'] = ahu_sa_query
     query['query']['ahu_ra'] = ahu_ra_query
+    query['query']['air_flow'] = fan_query
 
     # save qualify responses
     query['qualify'] = dict()
     query['qualify']['vav'] = qualify_vav_resp
     query['qualify']['ahu_sa'] = qualify_sa_resp
     query['qualify']['ahu_ra'] = qualify_ra_resp
+    query['qualify']['air_flow'] = qualify_fan_resp
 
     # save sites
     query['sites'] = dict()
@@ -139,6 +149,10 @@ def _fetch(query, eval_start_time, eval_end_time, window=15):
                 name="dnstream_ta",
                 definition=query['query']['vav'],
             ),
+            pymortar.View(
+                name="air_flow",
+                definition=query['query']['air_flow']
+            ),
         ],
         dataFrames=[
             pymortar.DataFrame(
@@ -149,6 +163,17 @@ def _fetch(query, eval_start_time, eval_end_time, window=15):
                     pymortar.Timeseries(
                         view="dnstream_ta",
                         dataVars=["?vlv"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="air_flow",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="air_flow",
+                        dataVars=["?air_flow"],
                     )
                 ]
             ),
@@ -307,13 +332,25 @@ def _clean_vav(fetch_resp_vav, row):
 
     """
 
+    df_flow = get_vav_flow(fetch_resp_vav, row, fillna=None)
+
     # combine data points in one dataframe
     vav_sa = fetch_resp_vav['dnstream_ta'][row['dnstream_ta_uuid']]
     ahu_sa = fetch_resp_vav['upstream_ta'][row['upstream_ta_uuid']]
     vlv_po = fetch_resp_vav['vlv'][row['vlv_uuid']]
 
-    vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
-    vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
+    if df_flow is not None:
+        vav_df = pd.concat([ahu_sa, vav_sa, vlv_po, df_flow], axis=1)
+        vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po', 'air_flow']
+
+        # drop values where there is no air flow
+        vav_df = vav_df.loc[vav_df['air_flow'] > 0]
+    else:
+        vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
+        vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
+
+        # drop values outside occupancy hours
+        vav_df = occupied_hours_subset(vav_df, occ_str=6, occ_end=18, wkend_str=5)
 
     # identify when valve is open
     vav_df['vlv_open'] = vav_df['vlv_po'] > 0
@@ -327,11 +364,48 @@ def _clean_vav(fetch_resp_vav, row):
     # drop values where vav supply air is less than ahu supply air
     vav_df = vav_df[vav_df['temp_diff'] >= 0]
 
-    # drop values outside occupancy hours
-    # TODO: retrieve HVAC status to subset df when fan is operating
-    vav_df = occupied_hours_subset(vav_df, occ_str=6, occ_end=18, wkend_str=5)
-
     return vav_df
+
+def get_vav_flow(fetch_resp_vav, row, fillna=None):
+    """
+    Return VAV supply air flow
+
+    Parameters
+    ----------
+    fetch_resp_vav : Mortar FetchResponse object for the vav data
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    fillna: Method to use for filling na values in dataframe. Options: backfill, bfill, pad, ffill, None
+
+    Returns
+    -------
+    df_flow: Pandas dataframe with vav supply air flow timeseries data
+    """
+
+    # fine corresponding air flow sensor for vav
+    flow_view = fetch_resp_vav.view('air_flow')
+    flow_meta = flow_view.loc[np.logical_and(flow_view['equip'] == row['equip'], flow_view['site'] == row['site'])]
+
+    fidx = 0
+    if flow_meta.shape[0] > 1:
+        print("Multiple airflow sensors found for VAV {} in site {}! \
+               Please check or press 'c' to continue using the first sensor.".format(row['equip'], row['site']))
+        print(flow_meta)
+        import pdb; pdb.set_trace()
+    if flow_meta.shape[0] == 0:
+        return None
+
+    # return air flow timeseries data
+    flow_id = flow_meta.loc[flow_meta.index[fidx], 'air_flow_uuid']
+    df_flow = fetch_resp_vav['air_flow'].loc[:, flow_id]
+
+    if fillna is not None:
+        # fill na values
+        df_flow = df_flow.fillna(method=fillna)
+
+    return df_flow
+
 
 def occupied_hours_subset(df, occ_str, occ_end, wkend_str=5, timestamp_col=None):
     """
