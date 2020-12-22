@@ -615,7 +615,7 @@ def check_folder_exist(folder):
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-def calc_long_t_diff(vlv_df, vlv_open=False):
+def calc_long_t_diff(vlv_df, vlv_open=False, row=None):
     """
     Calculate statistic on difference between down- and up-
     stream temperatures to determine the long term temperature difference.
@@ -635,12 +635,57 @@ def calc_long_t_diff(vlv_df, vlv_open=False):
         # long-term average when valve is open
         df_vlv_close = vlv_df[vlv_df['vlv_open']]
     else:
-        # long-term average when valve is closed
-        df_vlv_close = vlv_df[~vlv_df['vlv_open']]
+        # long-term average when valve is closed and only values after th_time minutes
+        # after valve has closed is included in average
+
+        #df_vlv_close = vlv_df[~vlv_df['vlv_open']]
+        df_vlv_close = return_delayed_df(vlv_df, th_time=25, window=15)
+        if row is not None:
+            check_folder_exist("./csv_data")
+            _name = "{}-{}-{}_dat".format(row['site'], row['equip'], row['vlv'])
+            df_vlv_close.to_csv(join("./csv_data", _name + '.csv'))
+
+        df_vlv_close = df_vlv_close[np.logical_and(df_vlv_close['cons_ts_vlv_c'], df_vlv_close['steady'])]
 
     long_t = df_vlv_close['temp_diff'].describe()
 
     return long_t
+
+def return_delayed_df(df_subset, th_time, window):
+    """
+    Return dataframe with row values that are X time after a changed state
+    """
+
+    min_ts = int(th_time/window) + (th_time % window > 0)
+    min_tst = pd.Timedelta(th_time, unit='min')
+
+    # only get consecutive timestamps datapoints
+    ts = pd.Series(df_subset.index)
+    ts_int = pd.Timedelta(window, unit='min')
+    cons_ts = ((ts - ts.shift(-1)).abs() <= ts_int) | (ts.diff() <= ts_int)
+
+    if (len(cons_ts) < min_ts) | ~(np.any(cons_ts)):
+        return None
+
+    df_subset['cons_ts'] = np.array(cons_ts)
+    df_subset['cons_ts_vlv_c'] = np.logical_and(~df_subset['vlv_open'], df_subset['cons_ts'])
+    df_subset['same'] = df_subset['cons_ts_vlv_c'].astype(int).diff().ne(0).cumsum()
+
+    df_cons_ts = df_subset.copy()
+
+    # subset by consecutive times that exceed th_time
+    lal = df_cons_ts.groupby('same')
+
+    steady = []
+    for grp in lal.groups.keys():
+        for ts in lal.groups[grp]:
+            init_ts = lal.groups[grp][0]
+            steady.append(init_ts+min_tst < ts)
+
+    df_cons_ts['steady'] = np.array(steady)
+
+    return df_cons_ts
+
 
 def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=None, bad_ratio=None, folder='./'):
     """
@@ -725,7 +770,7 @@ def find_bad_vlv_operation(vlv_df, long_t, th_time=45, window=15):
     """
 
     # find datapoints that exceed long-term temperature difference
-    min_ts = int(th_time/window)
+    min_ts = int(th_time/window) + (th_time % window > 0)
     th_exceed = np.logical_and((vlv_df['temp_diff'] >= long_t), ~(vlv_df['vlv_open']))
     df_bad = vlv_df[th_exceed]
 
@@ -738,8 +783,8 @@ def find_bad_vlv_operation(vlv_df, long_t, th_time=45, window=15):
         return None
 
     #df_bad['cons_ts'] = np.array(cons_ts)
-    df_bad.loc[:, 'cons_ts'] = np.array(cons_ts)
-    df_bad.loc[:, 'same'] = df_bad['cons_ts'].astype(int).diff().ne(0).cumsum()
+    df_bad['cons_ts'] = np.array(cons_ts)
+    df_bad['same'] = df_bad['cons_ts'].astype(int).diff().ne(0).cumsum()
     #df_bad['same'] = df_bad['cons_ts'].astype(int).diff().ne(0).cumsum()
 
     df_cons_ts = df_bad[df_bad['cons_ts']]
@@ -783,6 +828,9 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
     check_folder_exist(bad_folder)
     check_folder_exist(good_folder)
 
+    # container for holding types of faults
+    bad_klass = []
+
     if vlv_df.shape[0] == 0:
         print("'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site']))
         return
@@ -806,8 +854,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
         return
 
     # calculate long-term temp diff when valve is closed
-    bad_klass = []
-    long_tc = calc_long_t_diff(vlv_df)
+    long_tc = calc_long_t_diff(vlv_df, row=row)
     long_to = calc_long_t_diff(vlv_df, vlv_open=True)
 
 
