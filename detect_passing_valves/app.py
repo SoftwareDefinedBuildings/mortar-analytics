@@ -3,11 +3,12 @@ import sys
 import pandas as pd
 import numpy as np
 import os
+import time
 
 from os.path import join
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
-
+from scipy.stats import gaussian_kde
 
 def _query_and_qualify():
     """
@@ -343,14 +344,9 @@ def _clean_vav(fetch_resp_vav, row):
         vav_df = pd.concat([ahu_sa, vav_sa, vlv_po, df_flow], axis=1)
         vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po', 'air_flow']
 
-        # drop values where there is no air flow
-        vav_df = vav_df.loc[vav_df['air_flow'] > 0]
     else:
         vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
         vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
-
-        # drop values outside occupancy hours
-        vav_df = occupied_hours_subset(vav_df, occ_str=6, occ_end=18, wkend_str=5)
 
     # identify when valve is open
     vav_df['vlv_open'] = vav_df['vlv_po'] > 0
@@ -365,6 +361,25 @@ def _clean_vav(fetch_resp_vav, row):
     vav_df = vav_df[vav_df['temp_diff'] >= 0]
 
     return vav_df
+
+
+def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5):
+    """
+    Drop dataframe data rows for timeseries that are during unoccupied hours
+    """
+
+    if 'air_flow' in df.columns:
+        # drop values where there is no air flow
+        xs, ys = density_data(df['air_flow'], rescale_dat=df['temp_diff'])
+        min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
+
+        df = df.loc[df['air_flow'] > xs[min_idx[0]]]
+    else:
+        # drop values outside occupancy hours
+        df = occupied_hours_subset(df, occ_str, occ_end, wkend_str)
+
+    return df
+
 
 def get_vav_flow(fetch_resp_vav, row, fillna=None):
     """
@@ -390,9 +405,9 @@ def get_vav_flow(fetch_resp_vav, row, fillna=None):
     fidx = 0
     if flow_meta.shape[0] > 1:
         print("Multiple airflow sensors found for VAV {} in site {}! \
-               Please check or press 'c' to continue using the first sensor.".format(row['equip'], row['site']))
+               Please check. Will continue using the first sensor.".format(row['equip'], row['site']))
         print(flow_meta)
-        import pdb; pdb.set_trace()
+        time.sleep(3)
     if flow_meta.shape[0] == 0:
         return None
 
@@ -476,9 +491,6 @@ def _clean_ahu(fetch_resp_ahu, row):
     # drop na
     ahu_df = ahu_df.dropna()
 
-    # drop values outside occupancy hours
-    ahu_df = occupied_hours_subset(ahu_df, occ_str=6, occ_end=18, wkend_str=5)
-
     # drop values where vav supply air is less than ahu supply air
     #ahu_df = ahu_df[ahu_df['temp_diff'] >= 0]
 
@@ -511,7 +523,7 @@ def scale_0to1(vals):
     return scaled_vals
 
 
-def rescale_fit(scaled_vals, vals):
+def rescale_fit(scaled_vals, vals=None, max_val=None, min_val=None):
     """
     Rescale values of pandas series that are 0 to 1 to match the interval
     of another pandas series object values
@@ -521,14 +533,24 @@ def rescale_fit(scaled_vals, vals):
     scaled_vals: Pandas series object with values scaled from 0 to 1 and needs to be unscaled
 
     vals: Pandas series object or Pandas dataframe colum with unnormalized values.
-          This is used to extract max and min to unscaled the scaled_vals.
+        This is used to extract max and min to unscaled the scaled_vals.
+
+    max_val: a float number indicating the maximum value to rescale vector. Must
+        also define min_val.
+
+    min_val: a float number indicating the minimum value to rescale vector. Must
+        also define max_val.
 
     Returns
     -------
     unscaled_vals: Pandas series object of unscaled values
     """
-    max_val = vals.max()
-    min_val = vals.min()
+
+    if vals is not None:
+        max_val = vals.max()
+        min_val = vals.min()
+    elif (max_val is None) or (min_val is None):
+        raise ValueError('Need to define vals dataframe or both maximum and minimum values for rescale!')
 
     unscaled_vals = min_val + scaled_vals*(max_val - min_val)
 
@@ -640,10 +662,13 @@ def calc_long_t_diff(vlv_df, vlv_open=False, row=None):
 
         #df_vlv_close = vlv_df[~vlv_df['vlv_open']]
         df_vlv_close = return_delayed_df(vlv_df, th_time=25, window=15)
+
+        if df_vlv_close is None:
+            return None
+
         if row is not None:
-            check_folder_exist("./csv_data")
             _name = "{}-{}-{}_dat".format(row['site'], row['equip'], row['vlv'])
-            df_vlv_close.to_csv(join("./csv_data", _name + '.csv'))
+            df_vlv_close.to_csv(join(project_folder, "csv_data", _name + '.csv'))
 
         df_vlv_close = df_vlv_close[np.logical_and(df_vlv_close['cons_ts_vlv_c'], df_vlv_close['steady'])]
 
@@ -685,6 +710,55 @@ def return_delayed_df(df_subset, th_time, window):
     df_cons_ts['steady'] = np.array(steady)
 
     return df_cons_ts
+
+
+def return_extreme_points(dat, type_of_extreme=None, n_modes=None, sort=True):
+    """
+    Return the peak and troughs of a multimodal distribution
+    """
+
+    a = np.diff(dat)
+    asign = np.sign(a)
+
+    signchg = ((np.roll(asign, 1) - asign) != 0).astype(int)
+    idx = np.where(signchg == 1)[0]
+
+    # delete extreme points
+    if 0 in idx:
+        idx = np.delete(idx, 0)
+
+    if (len(dat) - 1) in idx:
+        idx = np.delete(idx, len(dat)-1)
+
+    idx_num = len(idx)
+    type_of = []
+    if dat[idx[0]] > dat[idx[1]]:
+        # if true then starting inflection point is a maximum
+        type_of = np.array(['max']*idx_num)
+        type_of[1:][::2] = 'min'
+    elif dat[idx[0]] < dat[idx[1]]:
+        # if true then starting inflection point is a minimum
+        type_of = np.array(['min']*idx_num)
+        type_of[1:][::2] = 'max'
+
+    # return requested inflection points
+    if type_of_extreme == 'max':
+        idx = idx[type_of == 'max']
+    elif type_of_extreme == 'min':
+        idx = idx[type_of == 'min']
+    else:
+        print('Returning all inflection points')
+
+    if sort or n_modes is not None:
+        idx = idx[np.argsort(dat[idx])]
+
+    if n_modes is not None:
+        if type_of_extreme == 'max':
+            idx = idx[(-1*n_modes):]
+        elif type_of_extreme == 'min':
+            idx = idx[:n_modes]
+
+    return idx
 
 
 def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=None, bad_ratio=None, folder='./'):
@@ -747,6 +821,70 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
     plt.close()
 
 
+def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
+    """
+    Create temperature difference versus air flow plots
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    folder: name of path to save the plot image
+
+    Returns
+    -------
+    None
+    """
+
+    # plot temperature difference vs valve position
+    fig, ax = plt.subplots(figsize=(8,4.5))
+    ax.set_ylabel('Temperature difference [°F]')
+    ax.set_xlabel('Air flow [cfm]')
+    ax.set_title("Valve = {}\nEquip. = {}".format(row['vlv'], row['equip']), loc='left')
+
+    vlv_df['color_open'] = '#640064'
+    vlv_df.loc[vlv_df['vlv_open'], 'color_open'] = '#006400'
+
+    ax.scatter(x=vlv_df['air_flow'], y=vlv_df['temp_diff'], color = vlv_df['color_open'], alpha=1/3, s=10)
+
+    # create density plot for air flow
+    xs, ys = density_data(vlv_df['air_flow'], rescale_dat=vlv_df['temp_diff'])
+    ax.plot(xs, ys)
+
+    # find modes of the distribution and the trough before/after the modes
+    max_idx = return_extreme_points(ys, type_of_extreme='max', n_modes=2)
+    min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
+
+    ax.scatter(x=xs[max_idx], y=ys[max_idx], color = '#ff0000', alpha=1, s=35)
+    ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35)
+
+    plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
+    plt.savefig(join(folder, plt_name + '.png'))
+    plt.close()
+
+
+def density_data(dat, rescale_dat=None):
+    """
+    
+    """
+    #create data for density plot
+    density = gaussian_kde(dat)
+    xs = np.linspace(0, max(dat), 200)
+
+    density.covariance_factor = lambda : 0.25
+    density._compute_covariance()
+
+    if isinstance(rescale_dat, (pd.Series, np.ndarray)):
+        ys = rescale_fit(scale_0to1(density(xs)), max_val=np.percentile(rescale_dat, 95), min_val=0)
+    elif isinstance(rescale_dat, str) and 'norm' in rescale_dat:
+        ys = scale_0to1(density(xs))
+    else:
+        ys = density(xs)
+
+    return xs, ys
+
 def find_bad_vlv_operation(vlv_df, long_t, th_time=45, window=15):
     """
 
@@ -799,7 +937,7 @@ def find_bad_vlv_operation(vlv_df, long_t, th_time=45, window=15):
     return bad_vlv.drop(columns=['cons_ts'])
 
 
-def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valves', bad_folder='./bad_valves'):
+def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valves', bad_folder='./bad_valves', project_folder='./'):
     """
     Analyze each valve and detect for passing valves
 
@@ -824,16 +962,25 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
     None
     """
 
-    # check if holding folders exist
-    check_folder_exist(bad_folder)
-    check_folder_exist(good_folder)
+    # check for empty dataframe
+    if vlv_df.empty:
+        print("'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site']))
+        return
+
+    if 'air_flow' in vlv_df.columns:
+        # plot temp diff vs air flow
+        _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'))
+
+    # drop data that occurs during unoccupied hours
+    vlv_df = drop_unoccupied_dat(vlv_df, occ_str=6, occ_end=18, wkend_str=5)
+
+    if vlv_df.empty:
+        print("'{}' in site {} has no data after hours of \
+            occupancy check! Skipping...".format(row['vlv'], row['site']))
+        return
 
     # container for holding types of faults
     bad_klass = []
-
-    if vlv_df.shape[0] == 0:
-        print("'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site']))
-        return
 
     # determine if valve datastream has open and closed data
     bool_type = vlv_df['vlv_open'].value_counts().index
@@ -844,15 +991,16 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
             long_to = calc_long_t_diff(vlv_df, vlv_open=True)
             if long_to['50%'] < th_bad_vlv:
                 print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vlv'], row['site']))
-                _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_to['50%'], folder=bad_folder)
+                _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_to['50%'], folder=join(project_folder, bad_folder))
         else:
             # only closed valve data
-            long_tc = calc_long_t_diff(vlv_df)
+            long_tc = calc_long_t_diff(vlv_df, row=row)
             if long_tc['50%'] > th_bad_vlv:
                 print("Probable passing valve '{}' in site {}".format(row['vlv'], row['site']))
-                _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=bad_folder)
+                _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=join(project_folder, bad_folder))
         return
 
+    # TODO: Figure out what to do if long_tc is None!
     # calculate long-term temp diff when valve is closed
     long_tc = calc_long_t_diff(vlv_df, row=row)
     long_to = calc_long_t_diff(vlv_df, vlv_open=True)
@@ -899,15 +1047,15 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
         bad_klass.append(True)
 
     if len(bad_klass) > 0:
-        folder = bad_folder
+        folder = join(project_folder, bad_folder)
         if bad_ratio > 5:
             print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
             if len(bad_klass) > 1:
                 print("{} percentage of time is leaking!".format(bad_ratio))
         else:
-            folder = good_folder
+            folder = join(project_folder, good_folder)
     else:
-        folder = good_folder
+        folder = join(project_folder, good_folder)
 
     if bad_vlv is not None:
         # colorize good and bad points
@@ -921,7 +1069,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
     # grps = list(lal.groups.keys())
     # bad_vlv.loc[lal.groups[grps[0]]]
 
-def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder):
+def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder, project_folder):
     """
     Helper function to analyze AHU valves
 
@@ -950,10 +1098,10 @@ def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder):
         print('No upstream sensor data available for coil in AHU {} for site {}'.format(row['equip'], row['site']))
         #_make_tdiff_vs_vlvpo_plot(vlv_df, row, folder='./')
     else:
-        _analyze_vlv(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder)
+        _analyze_vlv(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
 
 
-def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time, good_folder, bad_folder):
+def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time, good_folder, bad_folder, project_folder):
     """
     Hi level analyze function that runs through each valve queried to detect passing valves
 
@@ -988,7 +1136,7 @@ def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time
             vlv_df = clean_func(fetch_resp, row)
 
             # analyze for passing valves
-            analyze_func(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder)
+            analyze_func(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
 
         except:
             print("Error try to debug")
@@ -996,7 +1144,7 @@ def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time
             import pdb; pdb.set_trace()
             continue
 
-def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, good_folder, bad_folder):
+def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, good_folder, bad_folder, project_folder):
     """
     Main function that runs all the steps of the application
 
@@ -1028,16 +1176,22 @@ def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th
     -------
     None
     """
+    # check if holding folders exist
+    check_folder_exist(join(project_folder, bad_folder))
+    check_folder_exist(join(project_folder, good_folder))
+    check_folder_exist(join(project_folder, "air_flow_plots"))
+    check_folder_exist(join(project_folder, "csv_data"))
+
     query = _query_and_qualify()
     fetch_resp = _fetch(query, eval_start_time, eval_end_time, window)
 
     # analyze VAV valves
     vav_metadata = fetch_resp['vav'].view('dnstream_ta')
-    _analyze(vav_metadata, fetch_resp['vav'], _clean_vav, _analyze_vlv, th_bad_vlv, th_time, good_folder, bad_folder)
+    _analyze(vav_metadata, fetch_resp['vav'], _clean_vav, _analyze_vlv, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
 
     # analyze AHU valves
     ahu_metadata = reformat_ahu_view(fetch_resp['ahu'])
-    _analyze(ahu_metadata, fetch_resp['ahu'], _clean_ahu, _analyze_ahu, th_bad_vlv, th_time, good_folder, bad_folder)
+    _analyze(ahu_metadata, fetch_resp['ahu'], _clean_ahu, _analyze_ahu, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
 
 
 if __name__ == '__main__':
@@ -1047,8 +1201,9 @@ if __name__ == '__main__':
     window = 15
     th_bad_vlv = 5
     th_time = 45
-    good_folder = './good_valves'
-    bad_folder = './bad_valves'
+    project_folder = './with_airflow_checks'
+    good_folder = 'good_valves'
+    bad_folder = 'bad_valves'
 
     # Run the app
-    detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, good_folder, bad_folder)
+    detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
