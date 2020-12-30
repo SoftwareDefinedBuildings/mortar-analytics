@@ -588,6 +588,8 @@ def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff'):
     Returns
     -------
     df_fit: Pandas dataframe object with y_fitted values to a logistic model
+
+    popt: an array of the optimized parameters, slope and inflection point of the sigmoid function
     """
 
     # fit the curve
@@ -597,6 +599,7 @@ def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff'):
 
     # calculate fitted temp difference values
     est_k, est_x0 = popt
+    popt[1] = rescale_fit(popt[1], df[x_col])
     y_fitted = rescale_fit(sigmoid(scaled_pos, est_k, est_x0), df[y_col])
     y_fitted.name = 'y_fitted'
 
@@ -604,17 +607,17 @@ def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff'):
     df_fit = pd.concat([df[x_col], y_fitted], axis=1)
     df_fit = df_fit.sort_values(by=x_col)
 
-    return df_fit
+    return df_fit, popt
 
 def try_limit_dat_fit_model(vlv_df, df_fraction):
     # calculate fit model
     nrows, ncols = vlv_df.shape
     some_pts = np.random.choice(nrows, int(nrows*df_fraction))
     try:
-        df_fit = build_logistic_model(vlv_df.iloc[some_pts])
+        df_fit, popt = build_logistic_model(vlv_df.iloc[some_pts])
     except RuntimeError:
         try:
-            df_fit = build_logistic_model(vlv_df)
+            df_fit, popt = build_logistic_model(vlv_df)
         except RuntimeError:
             print("No regression found")
             df_fit = None
