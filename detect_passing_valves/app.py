@@ -365,7 +365,22 @@ def _clean_vav(fetch_resp_vav, row):
 
 def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5):
     """
-    Drop dataframe data rows for timeseries that are during unoccupied hours
+    Drop data rows from dataframe for timeseries that are during unoccupied hours. Uses airflow
+    data if available else it uses building occupancy hours.
+
+    Parameters
+    ----------
+    df: Pandas dataframe object with timeseries data
+
+    occ_str: float number indicating start of building occupancy
+
+    occ_end: float number indicating end of building occupancy
+
+    wkend_str: int number indicating start of weekend. 5 indicates Saturday and 6 indicates Sunday
+
+    Returns
+    -------
+    df: Pandas dataframe with data values during building occupancy hours
     """
 
     if 'air_flow' in df.columns:
@@ -565,7 +580,7 @@ def sigmoid(x, k, x0):
     ----------
     x: independent variable
     k: slope of the sigmoid function
-    x0: midpoint of the sigmoid function
+    x0: midpoint/inflection point of the sigmoid function
 
     Returns
     -------
@@ -592,20 +607,24 @@ def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff'):
     popt: an array of the optimized parameters, slope and inflection point of the sigmoid function
     """
 
-    # fit the curve
-    scaled_pos = scale_0to1(df[x_col])
-    scaled_t = scale_0to1(df[y_col])
-    popt, pcov = curve_fit(sigmoid, scaled_pos, scaled_t)
+    try:
+        # fit the curve
+        scaled_pos = scale_0to1(df[x_col])
+        scaled_t = scale_0to1(df[y_col])
+        popt, pcov = curve_fit(sigmoid, scaled_pos, scaled_t)
 
-    # calculate fitted temp difference values
-    est_k, est_x0 = popt
-    popt[1] = rescale_fit(popt[1], df[x_col])
-    y_fitted = rescale_fit(sigmoid(scaled_pos, est_k, est_x0), df[y_col])
-    y_fitted.name = 'y_fitted'
+        # calculate fitted temp difference values
+        est_k, est_x0 = popt
+        popt[1] = rescale_fit(popt[1], df[x_col])
+        y_fitted = rescale_fit(sigmoid(scaled_pos, est_k, est_x0), df[y_col])
+        y_fitted.name = 'y_fitted'
 
-    # sort values
-    df_fit = pd.concat([df[x_col], y_fitted], axis=1)
-    df_fit = df_fit.sort_values(by=x_col)
+        # sort values
+        df_fit = pd.concat([df[x_col], y_fitted], axis=1)
+        df_fit = df_fit.sort_values(by=x_col)
+    except RuntimeError:
+        print("Model unabled to be developed\n")
+        return None, None
 
     return df_fit, popt
 
@@ -640,69 +659,76 @@ def check_folder_exist(folder):
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-def calc_long_t_diff(vlv_df, vlv_open=False, row=None):
+def calc_long_t_diff(vlv_df):
     """
-    Calculate statistic on difference between down- and up-
-    stream temperatures to determine the long term temperature difference.
+    Calculate statistics on difference between down- and up-
+    stream temperatures to determine the long term temperature difference
+    when valve is closed.
 
     Parameters
     ----------
     vav_df: Pandas dataframe with valve timeseries data
 
-    vlv_open: boolean define if the statistics are performed on data that has
-              valve open (True) or closed (False)
-
     Returns
     -------
     long_t: dictionary object with statisitics of temperature difference
     """
-    if vlv_open:
-        # long-term average when valve is open
-        df_vlv_close = vlv_df[vlv_df['vlv_open']]
-    else:
-        # long-term average when valve is closed and only values after th_time minutes
-        # after valve has closed is included in average
 
-        #df_vlv_close = vlv_df[~vlv_df['vlv_open']]
-        df_vlv_close = return_delayed_df(vlv_df, th_time=25, window=15)
+    if vlv_df is None:
+        return None
 
-        if df_vlv_close is None:
-            return None
-
-        if row is not None:
-            _name = "{}-{}-{}_dat".format(row['site'], row['equip'], row['vlv'])
-            df_vlv_close.to_csv(join(project_folder, "csv_data", _name + '.csv'))
-
-        df_vlv_close = df_vlv_close[np.logical_and(df_vlv_close['cons_ts_vlv_c'], df_vlv_close['steady'])]
+    df_vlv_close = vlv_df.loc[np.logical_and(df_vlv_close['cons_ts_vlv_c'], df_vlv_close['steady'])]
+    if df_vlv_close is None:
+        return None
 
     long_t = df_vlv_close['temp_diff'].describe()
 
     return long_t
 
-def return_delayed_df(df_subset, th_time, window):
+def analyze_timestamps(vlv_df, th_time, window, row=None):
     """
-    Return dataframe with row values that are X time after a changed state
+    Analyze timestamps and valve operation in a pandas dataframe to determine which row values 
+    are th_time minutes after a changed state e.g. determine which data corresponds
+    to steady-state and transient values.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    th_time: length of time, in minutes, after the valve is closed to determine if
+        valve operating point is malfunctioning e.g. allow enough time for residue heat to
+        dissipate from the coil. Recommended time for reheat coils > 12 minutes.
+
+    window : aggregation window, in minutes, to average the raw measurement data
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    Returns
+    -------
+    vav_df: same input pandas dataframe but with added columns indicating:
+        cons_ts: boolean indicating consecutive timestamps
+        cons_ts_vlv_c: boolean indicating consecutive timestamps when valve is commanded closed
+        same: boolean indicating group number of cons_ts_vlv_c
+        steady: boolean indicating if the timestamp is in steady state condition
     """
 
     min_ts = int(th_time/window) + (th_time % window > 0)
     min_tst = pd.Timedelta(th_time, unit='min')
 
     # only get consecutive timestamps datapoints
-    ts = pd.Series(df_subset.index)
+    ts = pd.Series(vlv_df.index)
     ts_int = pd.Timedelta(window, unit='min')
     cons_ts = ((ts - ts.shift(-1)).abs() <= ts_int) | (ts.diff() <= ts_int)
 
     if (len(cons_ts) < min_ts) | ~(np.any(cons_ts)):
         return None
 
-    df_subset['cons_ts'] = np.array(cons_ts)
-    df_subset['cons_ts_vlv_c'] = np.logical_and(~df_subset['vlv_open'], df_subset['cons_ts'])
-    df_subset['same'] = df_subset['cons_ts_vlv_c'].astype(int).diff().ne(0).cumsum()
-
-    df_cons_ts = df_subset.copy()
+    vlv_df.loc[:, 'cons_ts'] = np.array(cons_ts)
+    vlv_df.loc[:, 'cons_ts_vlv_c'] = np.logical_and(~vlv_df['vlv_open'], vlv_df['cons_ts'])
+    vlv_df.loc[:, 'same'] = vlv_df['cons_ts_vlv_c'].astype(int).diff().ne(0).cumsum()
 
     # subset by consecutive times that exceed th_time
-    lal = df_cons_ts.groupby('same')
+    lal = vlv_df.groupby('same')
 
     steady = []
     for grp in lal.groups.keys():
@@ -710,14 +736,35 @@ def return_delayed_df(df_subset, th_time, window):
             init_ts = lal.groups[grp][0]
             steady.append(init_ts+min_tst < ts)
 
-    df_cons_ts['steady'] = np.array(steady)
+    vlv_df.loc[:, 'steady'] = np.array(steady)
 
-    return df_cons_ts
+    # save csv data if row is defined
+    if row is not None:
+        _name = "{}-{}-{}_dat".format(row['site'], row['equip'], row['vlv'])
+        vlv_df.to_csv(join(project_folder, "csv_data", _name + '.csv'))
+
+    return vlv_df
 
 
 def return_extreme_points(dat, type_of_extreme=None, n_modes=None, sort=True):
     """
-    Return the peak and troughs of a multimodal distribution
+    Return the peak and troughs of a multimodal distribution of a vector.
+
+    Parameters
+    ----------
+    dat: vector of data points to develop a distribution
+
+    type_of_extreme: type of extremes to return. If None it will return minimum
+        and maximum points.
+
+    n_modes: number of distribution peaks or troughs to return. If greater than 1
+        it will return the largest or smallest.
+
+    sort: sort the peak/trough values from smallest to largest.
+
+    Returns
+    -------
+    idx: indeces of the peaks or troughs of the multimodal distribution.
     """
 
     a = np.diff(dat)
@@ -847,7 +894,7 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
     ax.set_xlabel('Air flow [cfm]')
     ax.set_title("Valve = {}\nEquip. = {}".format(row['vlv'], row['equip']), loc='left')
 
-    vlv_df['color_open'] = '#640064'
+    vlv_df.loc[:, 'color_open'] = '#640064'
     vlv_df.loc[vlv_df['vlv_open'], 'color_open'] = '#006400'
 
     ax.scatter(x=vlv_df['air_flow'], y=vlv_df['temp_diff'], color = vlv_df['color_open'], alpha=1/3, s=10)
@@ -870,7 +917,22 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
 
 def density_data(dat, rescale_dat=None):
     """
-    
+    Create a kernel-density estimate using Gaussian kernels and rescale to
+    match the specific valve data.
+
+    Parameters
+    ----------
+    dat: vector of data points to develop a distribution
+
+    rescale_dat: If not None, the data vector is used to determine the peak for rescaling
+        the y values of the density function.
+        If rescale_dat is define as 'norm', ys will be normalized from 0 to 1.
+
+    Returns
+    -------
+    xs: x values of the density function
+
+    ys: y values of the density function
     """
     #create data for density plot
     density = gaussian_kde(dat)
@@ -879,18 +941,23 @@ def density_data(dat, rescale_dat=None):
     density.covariance_factor = lambda : 0.25
     density._compute_covariance()
 
+    # unscaled y values of density
+    us_ys = density(xs)
+
+    # rescale if rescale_dat is not None
     if isinstance(rescale_dat, (pd.Series, np.ndarray)):
-        ys = rescale_fit(scale_0to1(density(xs)), max_val=np.percentile(rescale_dat, 95), min_val=0)
+        ys = rescale_fit(scale_0to1(us_ys), max_val=np.percentile(rescale_dat, 95), min_val=0)
     elif isinstance(rescale_dat, str) and 'norm' in rescale_dat:
-        ys = scale_0to1(density(xs))
+        ys = scale_0to1(us_ys)
     else:
-        ys = density(xs)
+        ys = us_ys
 
     return xs, ys
 
-def find_bad_vlv_operation(vlv_df, long_t, th_time=45, window=15):
+def find_bad_vlv_operation(vlv_df, long_t, window):
     """
-
+    Determine which timeseries values are data from probable passing valves and return 
+    a pandas dataframe of only 'bad' values.
 
     Parameters
     ----------
@@ -899,48 +966,140 @@ def find_bad_vlv_operation(vlv_df, long_t, th_time=45, window=15):
     long_t: long-term temperature difference between down and up air streams when valve is 
             commanded close for correct operation
 
-    th_time: length of time, in minutes, after the valve is closed to determine if 
-            valve operating point is malfunctioning e.g. allow enough time for residue heat to
-            dissipate from the coil.
-
     window : aggregation window, in minutes, to average the raw measurement data
 
     Returns
     -------
-    bad_vlv: pandas dataframe object with the time intervals that the valve is malfunctioning
+    df_bad: pandas dataframe object with the time intervals that the valve is malfunctioning
+
+    pass_type: dictionary with failure modes listed, if any. Possible failure modes are:
+        long_term_fail: long term valve failure if valve seems to be passing for more than number X 
+            minutes defined in global parameter 'long_term_fail'. Default 300 minutes (5 hours).
+        short_term_fail: intermittent valve failure if valve seems to be passing for short periods 
+            (X minutes defined in global parameter 'shrt_term_fail') due to control errors, 
+            mechanical/electrical problems, or other. Default 60 minutes (1 hour).
     """
 
+    pass_type = dict()
+
     # find datapoints that exceed long-term temperature difference
-    min_ts = int(th_time/window) + (th_time % window > 0)
-    th_exceed = np.logical_and((vlv_df['temp_diff'] >= long_t), ~(vlv_df['vlv_open']))
+    exceed_long_t = vlv_df['temp_diff'] >= long_t
+
+    # TODO: Compare passing valve time to time it is actually open
+    # # determine time interval that valve is open
+    # open_grp = df_vlv_close.loc[np.logical_and(np.logical_and(vlv_df['vlv_open'], vlv_df['cons_ts']), exceed_long_t)].groupby('same')
+    # op_count_stats = open_grp['same'].count().describe()
+
+    # subset data by consecutive steady state values when valve is commanded closed and 
+    # exceeds long-term temperature difference
+    th_exceed = np.logical_and(np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady']), exceed_long_t)
     df_bad = vlv_df[th_exceed]
 
-    # only get consecutive timestamps datapoints
-    ts = pd.Series(df_bad.index)
-    ts_int = pd.Timedelta(window, unit='min')
-    cons_ts = ((ts - ts.shift(-1)).abs() <= ts_int) | (ts.diff() <= ts_int)
+    if df_bad.empty:
+        return None, dict()
 
-    if (len(cons_ts) < min_ts) | ~(np.any(cons_ts)):
-        return None
+    # analyze 'bad' dataframe for possible passing valve
+    bad_grp = df_bad.groupby('same')
+    bad_grp_count = bad_grp['same'].count()
 
-    #df_bad['cons_ts'] = np.array(cons_ts)
-    df_bad['cons_ts'] = np.array(cons_ts)
-    df_bad['same'] = df_bad['cons_ts'].astype(int).diff().ne(0).cumsum()
-    #df_bad['same'] = df_bad['cons_ts'].astype(int).diff().ne(0).cumsum()
+    max_idx = np.argmax(bad_grp_count)
+    max_grp = bad_grp.groups[bad_grp_count.index[max_idx]]
 
-    df_cons_ts = df_bad[df_bad['cons_ts']]
+    if len(max_grp) > 1:
+        max_passing_time = max_grp[-1] - max_grp[0]
+    else:
+        max_passing_time = pd.Timedelta(0, unit='min')
 
-    # subset by consecutive times that exceed th_time
-    lal = df_cons_ts.groupby('same')
-    grp_exceed = lal['same'].count()[lal['same'].count() >= min_ts].index
+    # detect long term failures
+    if max_passing_time > pd.Timedelta(long_term_fail, unit='min'):
+        ts_seconds = max_passing_time.seconds
+        ts_days    = max_passing_time.days * 3600 * 24
+        pass_type['long_term_fail'] = (ts_days+ts_seconds)/60.0
 
-    exceeded = [x in grp_exceed for x in df_cons_ts['same']]
-    bad_vlv = df_cons_ts[exceeded]
+    # detect short term failures
+    if any((bad_grp_count*window) > shrt_term_fail):
+        shrt_term_fail_times = bad_grp_count[(bad_grp_count*window) > shrt_term_fail]*window
+        pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count())
 
-    return bad_vlv.drop(columns=['cons_ts'])
+    return df_bad, pass_type
 
 
-def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valves', bad_folder='./bad_valves', project_folder='./'):
+def print_passing_mgs(row):
+    """
+    Print message to user when passing valve is probable
+
+    Parameters
+    ----------
+    row: Pandas series object with metadata for the specific valve
+
+    Returns
+    -------
+    None
+    """
+    print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
+
+
+def analyze_only_open(vlv_df, row, th_bad_vlv, project_folder):
+    """
+    Analyze valve data when there is only open valve data.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    project_folder: name of path for the project and used to save the plot.
+
+    Returns
+    -------
+    pass_type: dictionary with failure modes listed, if any. Possible failure modes are:
+        non_responsive_fail: failure when the valve is open but the median temperature
+            difference when the valve is command open but never goes above the above 
+            the th_bad_vlv threshold.
+    """
+    pass_type = dict()
+
+    long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
+    if long_to['50%'] < th_bad_vlv:
+        print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vlv'], row['site']))
+        pass_type['non_responsive_fail'] = round(long_to['50%'] - th_bad_vlv, 2)
+        _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_to['50%'], folder=join(project_folder, bad_folder))
+
+    return pass_type
+
+def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
+    """
+    Analyze valve data when there is only closed valve data.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    project_folder: name of path for the project and used to save the plot.
+
+    Returns
+    -------
+    pass_type: dictionary with failure modes listed, if any. Possible failure modes are:
+        simple_fail: failure when the median temperature difference when the valve is commanded
+            closed if above the th_bad_vlv threshold.
+    """
+    pass_type = dict()
+    long_tc = calc_long_t_diff(vlv_df)
+    if long_tc['50%'] > th_bad_vlv:
+        print_passing_mgs(row)
+        pass_type['simple_fail'] = round(long_tc['50%'] - th_bad_vlv, 2)
+        _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=join(project_folder, bad_folder))
+
+    return pass_type
+
+def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
     """
     Analyze each valve and detect for passing valves
 
@@ -956,19 +1115,19 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
         valve operating point is malfunctioning e.g. allow enough time for residue heat to
         dissipate from the coil.
 
-    good_folder: name of path showing the folder to save the plots of the correct operating valves
-
-    bad_folder: name of path showing the folder to save the plots of the malfunction valves
+    project_folder: name of path for the project and used to save the plots and csv data.
 
     Returns
     -------
     None
     """
+    # container for holding types of faults
+    passing_type = dict()
 
     # check for empty dataframe
     if vlv_df.empty:
         print("'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site']))
-        return
+        return passing_type
 
     if 'air_flow' in vlv_df.columns:
         # plot temp diff vs air flow
@@ -980,10 +1139,10 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
     if vlv_df.empty:
         print("'{}' in site {} has no data after hours of \
             occupancy check! Skipping...".format(row['vlv'], row['site']))
-        return
+        return passing_type
 
-    # container for holding types of faults
-    bad_klass = []
+    # Analyze timestamps and valve operation changes
+    vlv_df = analyze_timestamps(vlv_df, th_time, window, row=row)
 
     # determine if valve datastream has open and closed data
     bool_type = vlv_df['vlv_open'].value_counts().index
@@ -991,38 +1150,40 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
     if len(bool_type) < 2:
         if bool_type[0]:
             # only open valve data
-            long_to = calc_long_t_diff(vlv_df, vlv_open=True)
-            if long_to['50%'] < th_bad_vlv:
-                print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vlv'], row['site']))
-                _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_to['50%'], folder=join(project_folder, bad_folder))
+            passing_type = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
         else:
             # only closed valve data
-            long_tc = calc_long_t_diff(vlv_df, row=row)
-            if long_tc['50%'] > th_bad_vlv:
-                print("Probable passing valve '{}' in site {}".format(row['vlv'], row['site']))
-                _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=join(project_folder, bad_folder))
-        return
+            passing_type = analyze_only_close(vlv_df, row, th_bad_vlv, th_time, window, project_folder)
+
+        return passing_type
 
     # TODO: Figure out what to do if long_tc is None!
     # calculate long-term temp diff when valve is closed
-    long_tc = calc_long_t_diff(vlv_df, row=row)
-    long_to = calc_long_t_diff(vlv_df, vlv_open=True)
+    long_tc = calc_long_t_diff(vlv_df)
+    long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
 
+    if long_tc is None and long_to is not None:
+        pass_type = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
+        passing_type.update(pass_type)
+        return passing_type
 
-    # make a simple comparison of between long-term open and long-term closed temp diff
-    if (long_tc['mean'] + long_tc['std']) > long_to['mean']:
-        print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
-        bad_klass.append(True)
+    # make simple comparison of long-term closed temp difference and user define threshold
+    if long_tc['50%'] > th_bad_vlv:
+        print_passing_mgs(row)
+        passing_type['simple_fail'] = round(long_tc['50%'] - th_bad_vlv, 2)
+
+    # make comparison between long-term open and long-term closed temp difference
+    long_tc_to_diff = (long_tc['mean'] + long_tc['std']) - (long_to['75%'])
+    if long_tc_to_diff > 0:
+        print_passing_mgs(row)
+        passing_type['tc_to_close_fail'] = round(long_tc_to_diff, 2)
 
     # assume a 0 deg difference at 0% open valve
     no_zeros_po = vlv_df.copy()
-    no_zeros_po.loc[no_zeros_po['vlv_po'] == 0, 'temp_diff'] = 0
+    no_zeros_po.loc[~no_zeros_po['vlv_open'], 'temp_diff'] = 0
 
     # make a logit regression model assuming that closed valves make a zero temp difference
-    try:
-        df_fit_nz = build_logistic_model(no_zeros_po)
-    except RuntimeError:
-        df_fit_nz = None
+    df_fit_nz, popt = build_logistic_model(no_zeros_po)
 
     # determine estimated long-term difference
     if df_fit_nz is not None:
@@ -1031,8 +1192,9 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
         est_lt_diff_nz = long_tc['25%']
 
     # calculate bad valve instances vs overall dataframe
-    th_ratio = 20
-    bad_vlv = find_bad_vlv_operation(vlv_df, est_lt_diff_nz, th_time, window)
+    bad_vlv, pass_type = find_bad_vlv_operation(vlv_df, est_lt_diff_nz, window)
+
+    passing_type.update(pass_type)
 
     if bad_vlv is None:
         bad_ratio = 0
@@ -1041,28 +1203,25 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
         bad_ratio = 100*(bad_vlv.shape[0]/vlv_df.shape[0])
         long_tbad = bad_vlv['temp_diff'].describe()['mean']
 
+    # estimate size of leak in terms of pct that valve is open
     if df_fit_nz is not None:
         est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
+        if est_leak > popt[1] and bad_ratio > 5:
+            passing_type['leak_grtr_xovr_fail'] = est_leak
+            print_passing_mgs(row)
     else:
         est_leak = bad_ratio
+        import pdb; pdb.set_trace()
 
-    if est_leak > th_ratio:
-        bad_klass.append(True)
-
-    if len(bad_klass) > 0:
+    failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail'] for x in passing_type.keys()]
+    if any(failure):
         folder = join(project_folder, bad_folder)
-        if bad_ratio > 5:
-            print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
-            if len(bad_klass) > 1:
-                print("{} percentage of time is leaking!".format(bad_ratio))
-        else:
-            folder = join(project_folder, good_folder)
     else:
         folder = join(project_folder, good_folder)
 
     if bad_vlv is not None:
         # colorize good and bad points
-        vlv_df['color'] = '#5ab300'
+        vlv_df.loc[:, 'color'] = '#5ab300'
         vlv_df.loc[bad_vlv.index, 'color'] = '#b3005a'
 
     _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['25%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
@@ -1072,7 +1231,9 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, good_folder='./good_valv
     # grps = list(lal.groups.keys())
     # bad_vlv.loc[lal.groups[grps[0]]]
 
-def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder, project_folder):
+    return passing_type
+
+def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, project_folder):
     """
     Helper function to analyze AHU valves
 
@@ -1088,23 +1249,21 @@ def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder, proj
             valve operating point is malfunctioning e.g. allow enough time for residue heat to
             dissipate from the coil.
 
-    good_folder: name of path showing the folder to save the plots of the correct operating valves
-
-    bad_folder: name of path showing the folder to save the plots of the malfunction valves
-
     Returns
     -------
     None
     """
-
     if row['upstream_type'] != 'Mixed_Air_Temperature_Sensor':
         print('No upstream sensor data available for coil in AHU {} for site {}'.format(row['equip'], row['site']))
         #_make_tdiff_vs_vlvpo_plot(vlv_df, row, folder='./')
+        passing_type = dict()
     else:
-        _analyze_vlv(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
+        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv, th_time, project_folder)
+
+    return passing_type
 
 
-def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time, good_folder, bad_folder, project_folder):
+def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time, project_folder):
     """
     Hi level analyze function that runs through each valve queried to detect passing valves
 
@@ -1124,30 +1283,44 @@ def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time
             valve operating point is malfunctioning e.g. allow enough time for residue heat to
             dissipate from the coil.
 
-    good_folder: name of path showing the folder to save the plots of the correct operating valves
-
-    bad_folder: name of path showing the folder to save the plots of the malfunction valves
+    project_folder: name of path for the project and used to save the plots and csv data.
 
     Returns
     -------
     None
     """
+    results = []
     # analyze valves
     for idx, row in metadata.iterrows():
+        vlv_dat = dict(row)
         try:
             # clean data
             vlv_df = clean_func(fetch_resp, row)
 
             # analyze for passing valves
-            analyze_func(vlv_df, row, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
+            passing_type = analyze_func(vlv_df, row, th_bad_vlv, th_time, project_folder)
 
         except:
-            print("Error try to debug")
-            print(sys.exc_info()[0])
+            import traceback
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            print("******Error try to debug")
+            print("{}: {}\n".format(exc_type, exc_value))
+            print(''.join(traceback.format_tb(exc_traceback)))
+            passing_type = dict()
             import pdb; pdb.set_trace()
             continue
 
-def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, good_folder, bad_folder, project_folder):
+        if passing_type is None:
+            import pdb; pdb.set_trace()
+
+        vlv_dat.update(passing_type)
+        results.append(vlv_dat)
+
+    final_df = pd.DataFrame.from_records(results)
+
+    return final_df
+
+def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, project_folder):
     """
     Main function that runs all the steps of the application
 
@@ -1167,46 +1340,79 @@ def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th
 
     th_time: length of time, in minutes, after the valve is closed to determine if 
             valve operating point is malfunctioning e.g. allow enough time for residue heat to
-            dissipate from the coil.
+            dissipate from the coil. If two values are defined, the 1st is for reheat coils and the 2nd for ahu coils.
 
-    good_folder: name of path showing the folder to save the plots of the correct operating valves
-
-    bad_folder: name of path showing the folder to save the plots of the malfunction valves
-
-
+    project_folder: name of path for the project and used to save the plots and csv data.
 
     Returns
     -------
     None
     """
+    # declare user hidden parameters
+    global long_term_fail   # number of minutes to trigger an long-term passing valve failure
+    global shrt_term_fail   # number of minutes to trigger an intermitten passing valve failure
+    global good_folder
+    global bad_folder
+    global air_flow_folder
+    global csv_folder
+
+    # define user hidden parameters
+    long_term_fail = 5*60    # number of minutes to trigger an long-term passing valve failure
+    shrt_term_fail = 60      # number of minutes to trigger an intermitten passing valve failure
+    th_vlv_fail = 20         # equivalent percentage of valve open for determining failure.
+
+    # define container folders
+    good_folder = 'good_valves'         # name of path to the folder to save the plots of the correct operating valves
+    bad_folder = 'bad_valves'           # name of path to the folder to save the plots of the malfunction valves
+    air_flow_folder = 'air_flow_plots'  # name of path to the folder to save plots of the air flow values
+    csv_folder = 'csv_data'             # name of path to the folder to save detailed valve data
+
     # check if holding folders exist
     check_folder_exist(join(project_folder, bad_folder))
     check_folder_exist(join(project_folder, good_folder))
-    check_folder_exist(join(project_folder, "air_flow_plots"))
-    check_folder_exist(join(project_folder, "csv_data"))
+    check_folder_exist(join(project_folder, air_flow_folder))
+    check_folder_exist(join(project_folder, csv_folder))
+
+    # split length of time for vav and ahus
+    if isinstance(th_time, (list, tuple)):
+        if len(th_time) == 2:
+            th_time_vav = th_time[0]
+            th_time_ahu = th_time[1]
+        else:
+            th_time_vav = th_time[0]
+            th_time_ahu = th_time[0]
+    else:
+        th_time_vav = th_time
+        th_time_ahu = th_time
 
     query = _query_and_qualify()
     fetch_resp = _fetch(query, eval_start_time, eval_end_time, window)
 
     # analyze VAV valves
     vav_metadata = fetch_resp['vav'].view('dnstream_ta')
-    _analyze(vav_metadata, fetch_resp['vav'], _clean_vav, _analyze_vlv, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
+    results_vav = _analyze(vav_metadata, fetch_resp['vav'], _clean_vav, _analyze_vlv, th_bad_vlv, th_time_vav, project_folder)
 
     # analyze AHU valves
     ahu_metadata = reformat_ahu_view(fetch_resp['ahu'])
-    _analyze(ahu_metadata, fetch_resp['ahu'], _clean_ahu, _analyze_ahu, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
+    results_ahu = _analyze(ahu_metadata, fetch_resp['ahu'], _clean_ahu, _analyze_ahu, th_bad_vlv, th_time_ahu, project_folder)
+
+    # save results
+    final_df = pd.concat([results_vav, results_ahu])
+    final_df = final_df.sort_values(by=['long_term_fail'], ascending=False)
+    final_df.to_csv(join(project_folder, "passing_valve_results" + ".csv"), )
 
 
 if __name__ == '__main__':
+    # Disable options
+    pd.options.mode.chained_assignment = None
+
     # define parameters
     eval_start_time  = "2018-01-01T00:00:00Z"
     eval_end_time    = "2018-06-30T00:00:00Z"
     window = 15
-    th_bad_vlv = 5
-    th_time = 45
+    th_bad_vlv = 10
+    th_time = [12, 45]
     project_folder = './with_airflow_checks'
-    good_folder = 'good_valves'
-    bad_folder = 'bad_valves'
 
     # Run the app
-    detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, good_folder, bad_folder, project_folder)
+    detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, project_folder)
