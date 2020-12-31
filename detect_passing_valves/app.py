@@ -677,7 +677,7 @@ def calc_long_t_diff(vlv_df):
     if vlv_df is None:
         return None
 
-    df_vlv_close = vlv_df.loc[np.logical_and(df_vlv_close['cons_ts_vlv_c'], df_vlv_close['steady'])]
+    df_vlv_close = vlv_df.loc[np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady'])]
     if df_vlv_close is None:
         return None
 
@@ -954,7 +954,7 @@ def density_data(dat, rescale_dat=None):
 
     return xs, ys
 
-def find_bad_vlv_operation(vlv_df, long_t, window):
+def find_bad_vlv_operation(vlv_df, model, window):
     """
     Determine which timeseries values are data from probable passing valves and return 
     a pandas dataframe of only 'bad' values.
@@ -981,14 +981,20 @@ def find_bad_vlv_operation(vlv_df, long_t, window):
     """
 
     pass_type = dict()
+    long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
+    hi_diff = long_to['75%']
+
+    if model is not None:
+        vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
+
+        # define temperature difference and valve position failure thresholds
+        vlv_po_th = vlv_po_hi_diff/2.0
+        diff_vlv_po_th = model[model['vlv_po'] <= vlv_po_th]['y_fitted'].max()
+    else:
+        diff_vlv_po_th = hi_diff/4.0
 
     # find datapoints that exceed long-term temperature difference
-    exceed_long_t = vlv_df['temp_diff'] >= long_t
-
-    # TODO: Compare passing valve time to time it is actually open
-    # # determine time interval that valve is open
-    # open_grp = df_vlv_close.loc[np.logical_and(np.logical_and(vlv_df['vlv_open'], vlv_df['cons_ts']), exceed_long_t)].groupby('same')
-    # op_count_stats = open_grp['same'].count().describe()
+    exceed_long_t = vlv_df['temp_diff'] >= diff_vlv_po_th
 
     # subset data by consecutive steady state values when valve is commanded closed and 
     # exceeds long-term temperature difference
@@ -1019,7 +1025,8 @@ def find_bad_vlv_operation(vlv_df, long_t, window):
     # detect short term failures
     if any((bad_grp_count*window) > shrt_term_fail):
         shrt_term_fail_times = bad_grp_count[(bad_grp_count*window) > shrt_term_fail]*window
-        pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count())
+        if shrt_term_fail_times.count() > 2:
+            pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count())
 
     return df_bad, pass_type
 
@@ -1153,7 +1160,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
             passing_type = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
         else:
             # only closed valve data
-            passing_type = analyze_only_close(vlv_df, row, th_bad_vlv, th_time, window, project_folder)
+            passing_type = analyze_only_close(vlv_df, row, th_bad_vlv, project_folder)
 
         return passing_type
 
@@ -1185,15 +1192,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
     # make a logit regression model assuming that closed valves make a zero temp difference
     df_fit_nz, popt = build_logistic_model(no_zeros_po)
 
-    # determine estimated long-term difference
-    if df_fit_nz is not None:
-        est_lt_diff_nz = df_fit_nz[df_fit_nz['vlv_po'] == 0]['y_fitted'].mean()
-    else:
-        est_lt_diff_nz = long_tc['25%']
-
     # calculate bad valve instances vs overall dataframe
-    bad_vlv, pass_type = find_bad_vlv_operation(vlv_df, est_lt_diff_nz, window)
-
+    bad_vlv, pass_type = find_bad_vlv_operation(vlv_df, df_fit_nz, window)
     passing_type.update(pass_type)
 
     if bad_vlv is None:
@@ -1208,13 +1208,13 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
         est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
         if est_leak > popt[1] and bad_ratio > 5:
             passing_type['leak_grtr_xovr_fail'] = est_leak
-            print_passing_mgs(row)
     else:
         est_leak = bad_ratio
         import pdb; pdb.set_trace()
 
     failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail'] for x in passing_type.keys()]
     if any(failure):
+        print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
     else:
         folder = join(project_folder, good_folder)
