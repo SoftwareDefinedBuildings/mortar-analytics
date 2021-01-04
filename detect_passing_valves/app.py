@@ -388,7 +388,12 @@ def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5):
         xs, ys = density_data(df['air_flow'], rescale_dat=df['temp_diff'])
         min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
 
-        df = df.loc[df['air_flow'] > xs[min_idx[0]]]
+        if min_idx is not None:
+            min_air_flow = xs[min_idx[0]]
+        else:
+            min_air_flow = np.percentile(xs, 5)
+
+        df = df.loc[df['air_flow'] > min_air_flow]
     else:
         # drop values outside occupancy hours
         df = occupied_hours_subset(df, occ_str, occ_end, wkend_str)
@@ -781,34 +786,37 @@ def return_extreme_points(dat, type_of_extreme=None, n_modes=None, sort=True):
         idx = np.delete(idx, len(dat)-1)
 
     idx_num = len(idx)
-    type_of = []
-    if dat[idx[0]] > dat[idx[1]]:
-        # if true then starting inflection point is a maximum
-        type_of = np.array(['max']*idx_num)
-        type_of[1:][::2] = 'min'
-    elif dat[idx[0]] < dat[idx[1]]:
-        # if true then starting inflection point is a minimum
-        type_of = np.array(['min']*idx_num)
-        type_of[1:][::2] = 'max'
-
-    # return requested inflection points
-    if type_of_extreme == 'max':
-        idx = idx[type_of == 'max']
-    elif type_of_extreme == 'min':
-        idx = idx[type_of == 'min']
+    if idx_num < 2:
+        return None
     else:
-        print('Returning all inflection points')
+        type_of = []
+        if dat[idx[0]] > dat[idx[1]]:
+            # if true then starting inflection point is a maximum
+            type_of = np.array(['max']*idx_num)
+            type_of[1:][::2] = 'min'
+        elif dat[idx[0]] < dat[idx[1]]:
+            # if true then starting inflection point is a minimum
+            type_of = np.array(['min']*idx_num)
+            type_of[1:][::2] = 'max'
 
-    if sort or n_modes is not None:
-        idx = idx[np.argsort(dat[idx])]
-
-    if n_modes is not None:
+        # return requested inflection points
         if type_of_extreme == 'max':
-            idx = idx[(-1*n_modes):]
+            idx = idx[type_of == 'max']
         elif type_of_extreme == 'min':
-            idx = idx[:n_modes]
+            idx = idx[type_of == 'min']
+        else:
+            print('Returning all inflection points')
 
-    return idx
+        if sort or n_modes is not None:
+            idx = idx[np.argsort(dat[idx])]
+
+        if n_modes is not None:
+            if type_of_extreme == 'max':
+                idx = idx[(-1*n_modes):]
+            elif type_of_extreme == 'min':
+                idx = idx[:n_modes]
+
+        return idx
 
 
 def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=None, bad_ratio=None, folder='./'):
@@ -929,8 +937,10 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
     max_idx = return_extreme_points(ys, type_of_extreme='max', n_modes=2)
     min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
 
-    ax.scatter(x=xs[max_idx], y=ys[max_idx], color = '#ff0000', alpha=1, s=35)
-    ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35)
+    if max_idx is not None:
+        ax.scatter(x=xs[max_idx], y=ys[max_idx], color = '#ff0000', alpha=1, s=35)
+    if max_idx is not None:
+        ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35)
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
     full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
