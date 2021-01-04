@@ -1014,17 +1014,16 @@ def find_bad_vlv_operation(vlv_df, model, window):
     """
 
     pass_type = dict()
-    long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
-    hi_diff = long_to['75%']
+    hi_diff = np.percentile(vlv_df.loc[vlv_df['vlv_open'], 'temp_diff'], 95)
 
     if model is not None:
         vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
 
         # define temperature difference and valve position failure thresholds
         vlv_po_th = vlv_po_hi_diff/2.0
-        diff_vlv_po_th = model[model['vlv_po'] <= vlv_po_th]['y_fitted'].max()
+        diff_vlv_po_th = max(model[model['vlv_po'] <= vlv_po_th]['y_fitted'].max(), 5)
     else:
-        diff_vlv_po_th = hi_diff/4.0
+        diff_vlv_po_th = max(hi_diff/4.0, 5)
 
     # find datapoints that exceed long-term temperature difference
     exceed_long_t = vlv_df['temp_diff'] >= diff_vlv_po_th
@@ -1041,19 +1040,25 @@ def find_bad_vlv_operation(vlv_df, model, window):
     bad_grp = df_bad.groupby('same')
     bad_grp_count = bad_grp['same'].count()
 
-    max_idx = np.argmax(bad_grp_count)
-    max_grp = bad_grp.groups[bad_grp_count.index[max_idx]]
+    # max_idx = np.argmax(bad_grp_count)
+    # max_grp = bad_grp.groups[bad_grp_count.index[max_idx]]
 
-    if len(max_grp) > 1:
-        max_passing_time = max_grp[-1] - max_grp[0]
-    else:
-        max_passing_time = pd.Timedelta(0, unit='min')
+    # if len(max_grp) > 1:
+    #     max_passing_time = max_grp[-1] - max_grp[0]
+    # else:
+    #     max_passing_time = pd.Timedelta(0, unit='min')
+
+    # # detect long term failures
+    # if max_passing_time > pd.Timedelta(long_term_fail, unit='min'):
+    #     ts_seconds = max_passing_time.seconds
+    #     ts_days    = max_passing_time.days * 3600 * 24
+    #     pass_type['long_term_fail'] = (ts_days+ts_seconds)/60.0
 
     # detect long term failures
-    if max_passing_time > pd.Timedelta(long_term_fail, unit='min'):
-        ts_seconds = max_passing_time.seconds
-        ts_days    = max_passing_time.days * 3600 * 24
-        pass_type['long_term_fail'] = (ts_days+ts_seconds)/60.0
+    if any((bad_grp_count*window) > long_term_fail):
+        long_term_fail_times = bad_grp_count[(bad_grp_count*window) > long_term_fail]*window
+        if long_term_fail_times.count() > 2 or long_term_fail_times.index[-1] == vlv_df['same'].max():
+            pass_type['long_term_fail'] = (long_term_fail_times.mean(), long_term_fail_times.count())
 
     # detect short term failures
     if any((bad_grp_count*window) > shrt_term_fail):
@@ -1184,6 +1189,11 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
     # Analyze timestamps and valve operation changes
     vlv_df = analyze_timestamps(vlv_df, th_time, window, row=row)
 
+    if vlv_df.empty:
+        print("'{}' in site {} has no data after analyzing \
+            consecutive timestamps! Skipping...".format(row['vlv'], row['site']))
+        return passing_type
+
     # determine if valve datastream has open and closed data
     bool_type = vlv_df['vlv_open'].value_counts().index
 
@@ -1242,10 +1252,12 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
         if est_leak > popt[1] and bad_ratio > 5:
             passing_type['leak_grtr_xovr_fail'] = est_leak
     else:
-        est_leak = bad_ratio
-        import pdb; pdb.set_trace()
+        if bad_vlv is not None:
+            est_leak = bad_vlv['temp_diff'].mean()
+            if bad_ratio > 5 and est_leak > th_bad_vlv:
+                passing_type['leak_grtr_threshold_fail'] = est_leak
 
-    failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail'] for x in passing_type.keys()]
+    failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail', 'leak_grtr_threshold_fail'] for x in passing_type.keys()]
     if any(failure):
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
@@ -1429,10 +1441,11 @@ def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th
     ahu_metadata = reformat_ahu_view(fetch_resp['ahu'])
     results_ahu = _analyze(ahu_metadata, fetch_resp['ahu'], _clean_ahu, _analyze_ahu, th_bad_vlv, th_time_ahu, project_folder)
 
-    # save results
+    # clean report and save results
     final_df = pd.concat([results_vav, results_ahu])
-    final_df = final_df.sort_values(by=['long_term_fail'], ascending=False)
-    final_df.to_csv(join(project_folder, "passing_valve_results" + ".csv"), )
+    final_df = final_df.loc[np.logical_or(~final_df['long_term_fail'].isnull(), ~final_df['short_term_fail'].isnull())]
+    final_df = final_df.sort_values(by=['long_term_fail', 'short_term_fail'], ascending=False)
+    final_df.to_csv(join(project_folder, "passing_valve_results" + ".csv"))
 
 
 if __name__ == '__main__':
