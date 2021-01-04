@@ -746,7 +746,9 @@ def analyze_timestamps(vlv_df, th_time, window, row=None):
     # save csv data if row is defined
     if row is not None:
         _name = "{}-{}-{}_dat".format(row['site'], row['equip'], row['vlv'])
-        vlv_df.to_csv(join(project_folder, "csv_data", _name + '.csv'))
+
+        full_path = rename_existing(join(project_folder, "csv_data", _name + '.csv'), idx=0, row=row)
+        vlv_df.to_csv(full_path)
 
     return vlv_df
 
@@ -1189,7 +1191,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
     # Analyze timestamps and valve operation changes
     vlv_df = analyze_timestamps(vlv_df, th_time, window, row=row)
 
-    if vlv_df.empty:
+    if vlv_df is None:
         print("'{}' in site {} has no data after analyzing \
             consecutive timestamps! Skipping...".format(row['vlv'], row['site']))
         return passing_type
