@@ -867,9 +867,31 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
         ax.text(.2, 0.95*y_max, "Bad ratio={:.1f}%".format(bad_ratio))
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
-    plt.savefig(join(folder, plt_name + '.png'))
+    full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
+    plt.savefig(full_path)
     plt.close()
 
+
+def rename_existing(path, idx, row):
+    """
+    Check if the file path exists, if it does, then rename.
+
+    Parameters
+    ----------
+    path: name of path to check
+
+    idx: index of duplicate file
+
+    row: Pandas series object with metadata for the specific valve
+    """
+    if os.path.exists(path):
+        print('REPEATED EQUIP for {}-{}-{}'.format(row['site'], row['equip'], row['vlv']))
+        idx+=1
+        head, tail = os.path.split(path)
+        tail = "R" + str(idx) + "-" + tail
+        path = rename_existing(join(head, tail), idx, row)
+
+    return path
 
 def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
     """
@@ -911,7 +933,8 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
     ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35)
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
-    plt.savefig(join(folder, plt_name + '.png'))
+    full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
+    plt.savefig(full_path)
     plt.close()
 
 
