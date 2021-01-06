@@ -1060,13 +1060,15 @@ def find_bad_vlv_operation(vlv_df, model, window):
     if any((bad_grp_count*window) > long_term_fail):
         long_term_fail_times = bad_grp_count[(bad_grp_count*window) > long_term_fail]*window
         if long_term_fail_times.count() > 2 or long_term_fail_times.index[-1] == vlv_df['same'].max():
-            pass_type['long_term_fail'] = (long_term_fail_times.mean(), long_term_fail_times.count())
+            dates = [(bad_grp.groups[ky][0], bad_grp.groups[ky][-1]) for ky in long_term_fail_times.index]
+            pass_type['long_term_fail'] = (long_term_fail_times.mean(), long_term_fail_times.count(), dates)
 
     # detect short term failures
     if any((bad_grp_count*window) > shrt_term_fail):
         shrt_term_fail_times = bad_grp_count[(bad_grp_count*window) > shrt_term_fail]*window
         if shrt_term_fail_times.count() > 2:
-            pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count())
+            dates = [(bad_grp.groups[ky][0], bad_grp.groups[ky][-1]) for ky in shrt_term_fail_times.index]
+            pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count(), dates)
 
     return df_bad, pass_type
 
@@ -1084,6 +1086,39 @@ def print_passing_mgs(row):
     None
     """
     print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
+
+
+def clean_final_report(final_df):
+    """
+    Clean final report and sort by greatest number of minutes that fault was detected
+
+    Parameters
+    ----------
+    final_df: pandas dataframe with valve metadata along with failure types detected
+
+    Returns
+    -------
+    final_df: cleaned and sorted report
+    """
+    if 'long_term_fail' in final_df.columns:
+        final_df = final_df.loc[np.logical_or(~final_df['long_term_fail'].isnull(), ~final_df['short_term_fail'].isnull())]
+
+        # separate data into multiple columns
+        final_df['long_term_fail_avg_minutes'] = final_df.long_term_fail.str[0]
+        final_df['long_term_fail_num_times_detected'] = final_df.long_term_fail.str[1]
+        final_df['long_term_fail_str_end_dates'] = final_df.long_term_fail.str[2]
+
+        final_df['short_term_fail_avg_minutes'] = final_df.short_term_fail.str[0]
+        final_df['short_term_fail_num_times_detected'] = final_df.short_term_fail.str[1]
+        final_df['short_term_fail_str_end_dates'] = final_df.short_term_fail.str[2]
+
+        # sort by highest value faults
+        final_df = final_df.sort_values(by=['long_term_fail_avg_minutes', 'short_term_fail_avg_minutes'], ascending=False)
+
+        # drop redundant columns
+        final_df = final_df.drop(columns=['long_term_fail', 'short_term_fail'])
+
+    return final_df
 
 
 def analyze_only_open(vlv_df, row, th_bad_vlv, project_folder):
@@ -1180,20 +1215,20 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
         # plot temp diff vs air flow
         _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'))
 
-    # drop data that occurs during unoccupied hours
-    vlv_df = drop_unoccupied_dat(vlv_df, occ_str=6, occ_end=18, wkend_str=5)
-
-    if vlv_df.empty:
-        print("'{}' in site {} has no data after hours of \
-            occupancy check! Skipping...".format(row['vlv'], row['site']))
-        return passing_type
-
     # Analyze timestamps and valve operation changes
     vlv_df = analyze_timestamps(vlv_df, th_time, window, row=row)
 
     if vlv_df is None:
         print("'{}' in site {} has no data after analyzing \
             consecutive timestamps! Skipping...".format(row['vlv'], row['site']))
+        return passing_type
+
+    # drop data that occurs during unoccupied hours
+    vlv_df = drop_unoccupied_dat(vlv_df, occ_str=6, occ_end=18, wkend_str=5)
+
+    if vlv_df.empty:
+        print("'{}' in site {} has no data after hours of \
+            occupancy check! Skipping...".format(row['vlv'], row['site']))
         return passing_type
 
     # determine if valve datastream has open and closed data
@@ -1445,8 +1480,7 @@ def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th
 
     # clean report and save results
     final_df = pd.concat([results_vav, results_ahu])
-    final_df = final_df.loc[np.logical_or(~final_df['long_term_fail'].isnull(), ~final_df['short_term_fail'].isnull())]
-    final_df = final_df.sort_values(by=['long_term_fail', 'short_term_fail'], ascending=False)
+    final_df = clean_final_report(final_df)
     final_df.to_csv(join(project_folder, "passing_valve_results" + ".csv"))
 
 
