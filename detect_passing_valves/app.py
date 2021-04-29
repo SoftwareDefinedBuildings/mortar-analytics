@@ -1206,6 +1206,11 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
     # container for holding types of faults
     passing_type = dict()
 
+    # files = os.listdir(join("with_airflow_checks", bad_folder))
+    # vav_oi = [entry.split("-")[1] for entry in files]
+    # if row['equip'] in ['VAVRM2323']:
+    #     import pdb; pdb.set_trace()
+
     # check for empty dataframe
     if vlv_df.empty:
         print("'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site']))
@@ -1489,12 +1494,12 @@ if __name__ == '__main__':
     pd.options.mode.chained_assignment = None
 
     # define parameters
-    eval_start_time  = "2018-01-01T00:00:00Z"
-    eval_end_time    = "2018-06-30T00:00:00Z"
+    eval_start_time  = "2018-07-01T00:00:00Z"
+    eval_end_time    = "2018-12-31T23:59:00Z"
     window = 15
     th_bad_vlv = 10
     th_time = [12, 45]
-    project_folder = './with_airflow_checks'
+    project_folder = './with_airflow_checks_year_end'
 
     # Run the app
     detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, project_folder)
