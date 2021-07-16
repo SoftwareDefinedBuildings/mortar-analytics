@@ -1,0 +1,98 @@
+@prefix brick: <https://brickschema.org/schema/Brick#> .
+@prefix bsh: <https://brickschema.org/schema/BrickShape#> .
+@prefix tag: <https://brickschema.org/schema/BrickTag#> .
+@prefix ext: <https://example.com/schema/BrickExtension#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix BACnet: <https://brickschema.org/schema/bacnet#> .
+
+
+
+BACnet:Network    a    owl:Class ;
+    rdfs:subClassOf brick:Database ;
+    skos:definition "A BACnet network that facilitates communication of the building's energy management system hardware and control logic"@en .
+
+brick:bacnetPoint a owl:AsymmetricProperty,
+        owl:IrreflexiveProperty,
+        owl:ObjectProperty ;
+    rdfs:domain brick:Point ;
+    rdfs:range brick:BACnetReference ;
+    skos:definition "Relates a Brick point to the BACnet network server that indicates where and how the real time data for this point is retrieved"@en .
+
+brick:hasBacnetDeviceInstance a owl:AsymmetricProperty,
+        owl:IrreflexiveProperty,
+        owl:ObjectProperty ;
+    rdfs:domain brick:BACnetReference ;
+    rdfs:range xsd:string ;
+    skos:definition "The unique identifier (primary key) for this BACnetReference in some BACnet network server"@en .
+
+brick:hasBacnetDeviceType a owl:AsymmetricProperty,
+        owl:IrreflexiveProperty,
+        owl:ObjectProperty ;
+    rdfs:domain brick:BACnetReference ;
+    rdfs:range xsd:string ;
+    skos:definition "The type of BACnet point for this BACnetReference in some BACnet network server"@en .
+
+brick:accessedAt a owl:AsymmetricProperty,
+        owl:IrreflexiveProperty,
+        owl:ObjectProperty ;
+    rdfs:domain brick:BACnetReference ;
+    skos:definition "A reference to where the data for this BACnetReference is accessed"@en .
+
+brick:BACnetReference a owl:Class,
+        sh:NodeShape ;
+    skos:definition "Metadata describing where and how the real time data for a Brick Point is retrieved from the BACnet network" ;
+    sh:property [ a sh:PropertyShape ;
+            sh:datatype xsd:string ;
+            # sh:maxCount 1 ;
+            # sh:minCount 1 ;
+            sh:path brick:hasBacnetDeviceInstance ],
+        [ a sh:PropertyShape ;
+            sh:datatype xsd:string ;
+            # sh:maxCount 1 ;
+            # sh:minCount 1 ;
+            sh:path brick:hasBacnetDeviceType ],
+        [ a sh:PropertyShape ;
+            sh:class BACnet:Network ;
+            sh:path brick:accessedAt ] .
+
+bsh:hasBacnetDeviceInstanceDomainShape a sh:NodeShape ;
+    sh:class brick:BACnetReference ;
+    sh:message "Property hasBacnetDeviceInstance has subject with incorrect type" ;
+    sh:targetSubjectsOf brick:hasBacnetDeviceInstance .
+
+bsh:hasBacnetDeviceInstanceRangeShape a sh:NodeShape ;
+    sh:property [ sh:class xsd:string ;
+            sh:message "Property hasBacnetDeviceInstance has object with incorrect type" ;
+            sh:path brick:hasBacnetDeviceInstance ] ;
+    sh:targetSubjectsOf brick:hasBacnetDeviceInstance .
+
+bsh:hasBacnetDeviceTypeDomainShape a sh:NodeShape ;
+    sh:class brick:BACnetReference ;
+    sh:message "Property hasBacnetDeviceType has subject with incorrect type" ;
+    sh:targetSubjectsOf brick:hasBacnetDeviceType .
+
+bsh:hasBacnetDeviceTypeRangeShape a sh:NodeShape ;
+    sh:property [ sh:class xsd:string ;
+            sh:message "Property hasBacnetDeviceType has object with incorrect type" ;
+            sh:path brick:hasBacnetDeviceType ] ;
+    sh:targetSubjectsOf brick:hasBacnetDeviceType .
+
+bsh:accessedAtDomainShape a sh:NodeShape ;
+    sh:class brick:BACnetReference ;
+    sh:message "Property accessedAt has subject with incorrect type" ;
+    sh:targetSubjectsOf brick:accessedAt .
+
+bsh:bacnetPointDomainShape a sh:NodeShape ;
+    sh:class brick:Point ;
+    sh:message "Property bacnetPoint has subject with incorrect type" ;
+    sh:targetSubjectsOf brick:bacnetPoint .
+
+bsh:bacnetPointRangeShape a sh:NodeShape ;
+    sh:property [ sh:class brick:BACnetReference ;
+            sh:message "Property bacnetPoint has object with incorrect type" ;
+            sh:path brick:bacnetPoint ] ;
+    sh:targetSubjectsOf brick:bacnetPoint .
