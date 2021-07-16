@@ -1,0 +1,6 @@
+brickschema
+brickschema[reasonable]
+pandas
+numpy
+matplotlib
+scipy
