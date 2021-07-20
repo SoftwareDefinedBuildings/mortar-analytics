@@ -97,6 +97,7 @@ def return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name):
         "Effective_Air_Temperature_Setpoint",
         f"Discharge_Air_Temperature_{hvac_mode}_Setpoint",
         f"Discharge_Air_Temperature_Setpoint",
+        "Discharge_Water_Temperature_Setpoint",
         f"{hvac_mode}_Temperature_Setpoint",
         "Air_Temperature_Setpoint",
         "Embedded_Temperature_Setpoint",

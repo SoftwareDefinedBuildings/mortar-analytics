@@ -284,7 +284,6 @@ dbc:West_Air_Duct a brick:Ventilation_Air_System ;
         dbc:Ventilation_West_Auditorium .
 
 dbc:Air_Zone_1-1 a brick:HVAC_Zone ;
-    brick:feeds dbc:Auditorium ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Auditorium ;
     brick:hasPoint dbc:Field_Bus1.BrowerAHU1.HP1-1ZT,
@@ -292,7 +291,6 @@ dbc:Air_Zone_1-1 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerHP1-1.ZNT-SP .
 
 dbc:Air_Zone_1-2 a brick:HVAC_Zone ;
-    brick:feeds dbc:Auditorium ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Auditorium ;
     brick:hasPoint dbc:Field_Bus1.BrowerAHU1.HP1-2ZT,
@@ -300,41 +298,35 @@ dbc:Air_Zone_1-2 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerHP1-2.ZNT-SP .
 
 dbc:Air_Zone_1-4 a brick:HVAC_Zone ;
-    brick:feeds dbc:Lobby_100 ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Lobby_100 ;
     brick:hasPoint dbc:Field_Bus1.BrowerHP1-4.ZN-T .
 
 dbc:Air_Zone_1-5 a brick:HVAC_Zone ;
-    brick:feeds dbc:Gallery ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Gallery ;
     brick:hasPoint dbc:Field_Bus1.BrowerHP1-5.ZN-T,
         dbc:Field_Bus1.BrowerHP1-5.ZNT-SP .
 
 dbc:Air_Zone_1-6 a brick:HVAC_Zone ;
-    brick:feeds dbc:Large_conference_room ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Large_conference_room ;
     brick:hasPoint dbc:Field_Bus1.BrowerHP1-6.ZN-T,
         dbc:Field_Bus1.BrowerHP1-6.ZNT-SP .
 
 dbc:Air_Zone_1-7 a brick:HVAC_Zone ;
-    brick:feeds dbc:Small_conference_room_100 ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Small_conference_room_100 ;
     brick:hasPoint dbc:Field_Bus1.BrowerHP1-7.ZN-T,
         dbc:Field_Bus1.BrowerHP1-7.ZNT-SP .
 
 dbc:Air_Zone_1-8 a brick:HVAC_Zone ;
-    brick:feeds dbc:Audio_visual_room ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Audio_visual_room ;
     brick:hasPoint dbc:Field_Bus1.BrowerHP1-8.ZN-T,
         dbc:Field_Bus1.BrowerHP1-8.ZNT-SP .
 
 dbc:Air_Zone_2-2 a brick:HVAC_Zone ;
-    brick:feeds dbc:Meeting_room ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:Meeting_room ;
     brick:hasPoint dbc:Field_Bus1.BrowerHP2-2.ZN-T,
@@ -1064,6 +1056,12 @@ dbc:Cooling_Tower_Marley_AV62011 a brick:Cooling_Tower ;
         dbc:Field_Bus1.Plant_CoolingTower.TwrFanMinSpdOffDelay,
         dbc:Field_Bus1.Plant_CoolingTower.TwrFanOnDelay,
         dbc:Field_Bus1.Plant_CoolingTower.TwrsysMinOff .
+
+dbc:East_Corridor_300 a brick:Room ;
+    brick:hasLocation dbc:Third .
+
+dbc:East_Corridor_400 a brick:Room ;
+    brick:hasLocation dbc:Fourth .
 
 dbc:Energy.bldg_kw a brick:Demand_Sensor ;
     brick:bacnetPoint dbc:id-3004610 ;
@@ -5039,7 +5037,7 @@ dbc:Field_Bus1.Plant_RadiantLoop.ClgToHtgDelay a brick:Delay_Parameter ;
     brick:bacnetPoint dbc:id-3002661 ;
     brick:hasUnit unit:SEC .
 
-dbc:Field_Bus1.Plant_RadiantLoop.EFFSLAB-SP a brick:Embedded_Temperature_Setpoint ;
+dbc:Field_Bus1.Plant_RadiantLoop.EFFSLAB-SP a brick:Discharge_Water_Temperature_Setpoint ;
     brick:bacnetPoint dbc:id-3000610 ;
     brick:hasUnit unit:DEG_F .
 
@@ -5093,7 +5091,7 @@ dbc:Field_Bus1.Plant_RadiantLoop.HtgToClgDelay a brick:Delay_Parameter ;
 dbc:Field_Bus1.Plant_RadiantLoop.Inadequate_Slab_Temp a brick:Mode_Status ;
     brick:bacnetPoint dbc:id-3004149 .
 
-dbc:Field_Bus1.Plant_RadiantLoop.Inadequate_Slab_Temp_SP a brick:Water_Temperature_Setpoint ;
+dbc:Field_Bus1.Plant_RadiantLoop.Inadequate_Slab_Temp_SP a brick:Setpoint_Limit ;
     brick:bacnetPoint dbc:id-3004148 ;
     brick:hasUnit unit:DEG_F .
 
@@ -5121,7 +5119,7 @@ dbc:Field_Bus1.Plant_RadiantLoop.P4-A a brick:Alarm ;
 dbc:Field_Bus1.Plant_RadiantLoop.P4-S a brick:On_Off_Status ;
     brick:bacnetPoint dbc:id-3000636 .
 
-dbc:Field_Bus1.Plant_RadiantLoop.PRECOOL-SP a brick:Embedded_Temperature_Setpoint ;
+dbc:Field_Bus1.Plant_RadiantLoop.PRECOOL-SP a brick:Supply_Chilled_Water_Temperature_Setpoint ;
     brick:bacnetPoint dbc:id-3000608 ;
     brick:hasUnit unit:DEG_F .
 
@@ -6304,11 +6302,6 @@ dbc:Radiant_4-6 a brick:Thermally_Activated_Building_System_Panel ;
         dbc:Schedule.RAD_FL_4_EAST .
 
 dbc:Radiant_Zone_2-2 a brick:HVAC_Zone ;
-    brick:feeds dbc:Small_conference_room_200,
-        dbc:Suite_210,
-        dbc:Suite_240,
-        dbc:Suite_250,
-        dbc:Suite_270 ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:Small_conference_room_200,
         dbc:Suite_210,
@@ -6322,10 +6315,6 @@ dbc:Radiant_Zone_2-2 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant2East.ZN2-2_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_2-3 a brick:HVAC_Zone ;
-    brick:feeds dbc:Copy_room,
-        dbc:Lobby_200,
-        dbc:Suite_210,
-        dbc:Womens_restroom_200 ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:Copy_room,
         dbc:Lobby_200,
@@ -6338,14 +6327,6 @@ dbc:Radiant_Zone_2-3 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant2West.ZN2-3_HTGUNOCC-SP .
 
 dbc:Radiant_Zone_2-4 a brick:HVAC_Zone ;
-    brick:feeds dbc:Kitchen,
-        dbc:Lobby_200,
-        dbc:Mens_restroom_200,
-        dbc:Showers,
-        dbc:Storage,
-        dbc:Suite_270,
-        dbc:Suite_280,
-        dbc:Suite_290 ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:Kitchen,
         dbc:Lobby_200,
@@ -6362,7 +6343,6 @@ dbc:Radiant_Zone_2-4 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant2West.ZN2-4-T .
 
 dbc:Radiant_Zone_2-5 a brick:HVAC_Zone ;
-    brick:feeds dbc:Suite_270 ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:Suite_270 ;
     brick:hasPoint dbc:Field_Bus1.BrowerRadiant2East.ZN2-5_EFF_HTG_SP,
@@ -6372,11 +6352,6 @@ dbc:Radiant_Zone_2-5 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant2East.ZN2-T .
 
 dbc:Radiant_Zone_2-6 a brick:HVAC_Zone ;
-    brick:feeds dbc:East_Corridor_200,
-        dbc:Suite_240,
-        dbc:Suite_250,
-        dbc:Suite_270,
-        dbc:Suite_280 ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:East_Corridor_200,
         dbc:Suite_240,
@@ -6390,9 +6365,6 @@ dbc:Radiant_Zone_2-6 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant2East.ZN3-T .
 
 dbc:Radiant_Zone_3-2 a brick:HVAC_Zone ;
-    brick:feeds dbc:Suite_320,
-        dbc:Suite_340,
-        dbc:Suite_360 ;
     brick:hasLocation dbc:Third ;
     brick:hasPart dbc:Suite_320,
         dbc:Suite_340,
@@ -6404,10 +6376,6 @@ dbc:Radiant_Zone_3-2 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant3East.ZN3-2_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_3-3 a brick:HVAC_Zone ;
-    brick:feeds dbc:Suite_300,
-        dbc:Suite_320,
-        dbc:West_Corridor_300,
-        dbc:Womens_restroom_300 ;
     brick:hasLocation dbc:Third ;
     brick:hasPart dbc:Suite_300,
         dbc:Suite_320,
@@ -6420,9 +6388,6 @@ dbc:Radiant_Zone_3-3 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant3West.ZN3-3_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_3-4 a brick:HVAC_Zone ;
-    brick:feeds dbc:Mens_restroom_300,
-        dbc:Suite_300,
-        dbc:Womens_restroom_300 ;
     brick:hasLocation dbc:Third ;
     brick:hasPart dbc:Mens_restroom_300,
         dbc:Suite_300,
@@ -6434,7 +6399,6 @@ dbc:Radiant_Zone_3-4 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant3West.ZN3-4_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_3-5 a brick:HVAC_Zone ;
-    brick:feeds dbc:Suite_360 ;
     brick:hasLocation dbc:Third ;
     brick:hasPart dbc:Suite_360 ;
     brick:hasPoint dbc:Field_Bus1.BrowerRadiant3East.ZN2-SP,
@@ -6444,10 +6408,6 @@ dbc:Radiant_Zone_3-5 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant3East.ZN3-5_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_3-6 a brick:HVAC_Zone ;
-    brick:feeds dbc:East_Corridor_300,
-        dbc:Suite_300,
-        dbc:Suite_340,
-        dbc:Suite_360 ;
     brick:hasLocation dbc:Third ;
     brick:hasPart dbc:East_Corridor_300,
         dbc:Suite_300,
@@ -6460,10 +6420,6 @@ dbc:Radiant_Zone_3-6 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant3East.ZN3-T .
 
 dbc:Radiant_Zone_4-2 a brick:HVAC_Zone ;
-    brick:feeds dbc:Suite_420,
-        dbc:Suite_430,
-        dbc:Suite_440,
-        dbc:Suite_460 ;
     brick:hasLocation dbc:Fourth ;
     brick:hasPart dbc:Suite_420,
         dbc:Suite_430,
@@ -6476,11 +6432,6 @@ dbc:Radiant_Zone_4-2 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant4East.ZN4-2_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_4-3 a brick:HVAC_Zone ;
-    brick:feeds dbc:Suite_400,
-        dbc:Suite_420,
-        dbc:Suite_430,
-        dbc:West_Corridor_400,
-        dbc:Womens_restroom_400 ;
     brick:hasLocation dbc:Fourth ;
     brick:hasPart dbc:Suite_400,
         dbc:Suite_420,
@@ -6494,12 +6445,6 @@ dbc:Radiant_Zone_4-3 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant4West.ZN4-3_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_4-4 a brick:HVAC_Zone ;
-    brick:feeds dbc:Mens_restroom_400,
-        dbc:Suite_400,
-        dbc:Suite_460,
-        dbc:Suite_480,
-        dbc:Suite_490,
-        dbc:Womens_restroom_400 ;
     brick:hasLocation dbc:Fourth ;
     brick:hasPart dbc:Mens_restroom_400,
         dbc:Suite_400,
@@ -6514,7 +6459,6 @@ dbc:Radiant_Zone_4-4 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant4West.ZN4-4_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_4-5 a brick:HVAC_Zone ;
-    brick:feeds dbc:Suite_460 ;
     brick:hasLocation dbc:Fourth ;
     brick:hasPart dbc:Suite_460 ;
     brick:hasPoint dbc:Field_Bus1.BrowerRadiant4East.ZN2-SP,
@@ -6524,10 +6468,6 @@ dbc:Radiant_Zone_4-5 a brick:HVAC_Zone ;
         dbc:Field_Bus1.BrowerRadiant4East.ZN4-5_HEAT_UNOCC_SP .
 
 dbc:Radiant_Zone_4-6 a brick:HVAC_Zone ;
-    brick:feeds dbc:East_Corridor_400,
-        dbc:Suite_440,
-        dbc:Suite_460,
-        dbc:Suite_480 ;
     brick:hasLocation dbc:Fourth ;
     brick:hasPart dbc:East_Corridor_400,
         dbc:Suite_440,
@@ -6557,18 +6497,14 @@ dbc:Schedule.UNFL_DAMP_4TH_FL a brick:Vent_Operating_Mode_Status ;
 dbc:Schedule.UNFL_DAMP_AUD a brick:Vent_Operating_Mode_Status ;
     brick:bacnetPoint dbc:id-3002137 .
 
+dbc:Small_conference_room_200 a brick:Room ;
+    brick:hasLocation dbc:Second .
+
 dbc:Ventilation_Auditorium_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:Auditorium ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Auditorium .
 
 dbc:Ventilation_East_2_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:East_Corridor_200,
-        dbc:Suite_240,
-        dbc:Suite_250,
-        dbc:Suite_270,
-        dbc:Suite_280,
-        dbc:Suite_290 ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:East_Corridor_200,
         dbc:Suite_240,
@@ -6578,10 +6514,6 @@ dbc:Ventilation_East_2_Zone a brick:HVAC_Zone ;
         dbc:Suite_290 .
 
 dbc:Ventilation_East_3_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:East_corridor_300,
-        dbc:Suite_300,
-        dbc:Suite_340,
-        dbc:Suite_360 ;
     brick:hasLocation dbc:Third ;
     brick:hasPart dbc:East_corridor_300,
         dbc:Suite_300,
@@ -6589,11 +6521,6 @@ dbc:Ventilation_East_3_Zone a brick:HVAC_Zone ;
         dbc:Suite_360 .
 
 dbc:Ventilation_East_4_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:East_corridor_400,
-        dbc:Suite_440,
-        dbc:Suite_460,
-        dbc:Suite_480,
-        dbc:Suite_490 ;
     brick:hasLocation dbc:Fourth ;
     brick:hasPart dbc:East_corridor_400,
         dbc:Suite_440,
@@ -6602,27 +6529,10 @@ dbc:Ventilation_East_4_Zone a brick:HVAC_Zone ;
         dbc:Suite_490 .
 
 dbc:Ventilation_East_Auditorium_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:Auditorium ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Auditorium .
 
 dbc:Ventilation_Floor_2_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:Copy_room,
-        dbc:East_Corridor_200,
-        dbc:Kitchen,
-        dbc:Lobby_200,
-        dbc:Meeting_room,
-        dbc:Mens_restroom_200,
-        dbc:Showers,
-        dbc:Small_conference_room,
-        dbc:Storage,
-        dbc:Suite_210,
-        dbc:Suite_240,
-        dbc:Suite_250,
-        dbc:Suite_270,
-        dbc:Suite_280,
-        dbc:Suite_290,
-        dbc:Womens_restroom_200 ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:Copy_room,
         dbc:East_Corridor_200,
@@ -6642,14 +6552,6 @@ dbc:Ventilation_Floor_2_Zone a brick:HVAC_Zone ;
         dbc:Womens_restroom_200 .
 
 dbc:Ventilation_Floor_3_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:East_corridor_300,
-        dbc:Mens_restroom_300,
-        dbc:Suite_300,
-        dbc:Suite_320,
-        dbc:Suite_340,
-        dbc:Suite_360,
-        dbc:West_Corridor_300,
-        dbc:Womens_restroom_300 ;
     brick:hasLocation dbc:Third ;
     brick:hasPart dbc:East_corridor_300,
         dbc:Mens_restroom_300,
@@ -6661,17 +6563,6 @@ dbc:Ventilation_Floor_3_Zone a brick:HVAC_Zone ;
         dbc:Womens_restroom_300 .
 
 dbc:Ventilation_Floor_4_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:East_corridor_400,
-        dbc:Mens_restroom_400,
-        dbc:Suite_400,
-        dbc:Suite_420,
-        dbc:Suite_430,
-        dbc:Suite_440,
-        dbc:Suite_460,
-        dbc:Suite_480,
-        dbc:Suite_490,
-        dbc:West_corridor_400,
-        dbc:Womens_restroom_400 ;
     brick:hasLocation dbc:Fourth ;
     brick:hasPart dbc:East_corridor_400,
         dbc:Mens_restroom_400,
@@ -6686,16 +6577,6 @@ dbc:Ventilation_Floor_4_Zone a brick:HVAC_Zone ;
         dbc:Womens_restroom_400 .
 
 dbc:Ventilation_West_2_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:Copy_room,
-        dbc:Kitchen,
-        dbc:Lobby_200,
-        dbc:Meeting_room,
-        dbc:Mens_restroom_200,
-        dbc:Showers,
-        dbc:Small_conference_room,
-        dbc:Storage,
-        dbc:Suite_210,
-        dbc:Womens_restroom_200 ;
     brick:hasLocation dbc:Second ;
     brick:hasPart dbc:Copy_room,
         dbc:Kitchen,
@@ -6709,11 +6590,6 @@ dbc:Ventilation_West_2_Zone a brick:HVAC_Zone ;
         dbc:Womens_restroom_200 .
 
 dbc:Ventilation_West_3_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:Mens_restroom_300,
-        dbc:Suite_300,
-        dbc:Suite_320,
-        dbc:West_Corridor_300,
-        dbc:Womens_restroom_300 ;
     brick:hasLocation dbc:Third ;
     brick:hasPart dbc:Mens_restroom_300,
         dbc:Suite_300,
@@ -6722,12 +6598,6 @@ dbc:Ventilation_West_3_Zone a brick:HVAC_Zone ;
         dbc:Womens_restroom_300 .
 
 dbc:Ventilation_West_4_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:Mens_restroom_400,
-        dbc:Suite_400,
-        dbc:Suite_420,
-        dbc:Suite_430,
-        dbc:West_corridor_400,
-        dbc:Womens_restroom_400 ;
     brick:hasLocation dbc:Fourth ;
     brick:hasPart dbc:Mens_restroom_400,
         dbc:Suite_400,
@@ -6737,7 +6607,6 @@ dbc:Ventilation_West_4_Zone a brick:HVAC_Zone ;
         dbc:Womens_restroom_400 .
 
 dbc:Ventilation_West_Auditorium_Zone a brick:HVAC_Zone ;
-    brick:feeds dbc:Auditorium ;
     brick:hasLocation dbc:First ;
     brick:hasPart dbc:Auditorium .
 
@@ -6748,6 +6617,9 @@ dbc:Water_Heater_Laars_UHE-100T150 a brick:Boiler ;
         dbc:Field_Bus1.DHW_BTU.Analog_Inputs.AI-4,
         dbc:Programming.MAIN-DOMESTIC,
         dbc:Programming.RECOVERED_WATER .
+
+dbc:West_Corridor_400 a brick:Room ;
+    brick:hasLocation dbc:Fourth .
 
 dbc:id-3000015 brick:accessedAt dbc:BrowerBACnet ;
     brick:hasBacnetDeviceInstance "3000015" ;
@@ -12393,10 +12265,13 @@ dbc:id-3006931 brick:accessedAt dbc:BrowerBACnet ;
     brick:hasBacnetDeviceInstance "3006931" ;
     brick:hasBacnetDeviceType "binaryValue" .
 
-dbc:East_Corridor_300 a brick:Room ;
+dbc:Audio_visual_room a brick:Room ;
+    brick:hasLocation dbc:First .
+
+dbc:East_corridor_300 a brick:Room ;
     brick:hasLocation dbc:Third .
 
-dbc:East_Corridor_400 a brick:Room ;
+dbc:East_corridor_400 a brick:Room ;
     brick:hasLocation dbc:Fourth .
 
 dbc:East_plenum_200 a brick:Room .
@@ -12626,7 +12501,7 @@ dbc:Schedule.RAD_FL_3_WEST a brick:Occupancy_Status ;
 dbc:Schedule.RAD_FL_4_WEST a brick:Occupancy_Status ;
     brick:bacnetPoint dbc:id-3002146 .
 
-dbc:Small_conference_room_200 a brick:Room ;
+dbc:Small_conference_room a brick:Room ;
     brick:hasLocation dbc:Second .
 
 dbc:TABs_Radiant_Loop a brick:Water_Loop ;
@@ -12793,7 +12668,7 @@ dbc:Ventilation_West_Auditorium a brick:Air_Handling_Unit,
         dbc:Field_Bus1.BrowerUnderfloorAud.ZN-TOCCW,
         dbc:Field_Bus1.BrowerUnderfloorAud.ZN-TW .
 
-dbc:West_Corridor_400 a brick:Room ;
+dbc:West_corridor_400 a brick:Room ;
     brick:hasLocation dbc:Fourth .
 
 dbc:West_plenum_200 a brick:Room .
@@ -12868,10 +12743,13 @@ dbc:AHU_1_McQuay_West_OAH029GDAM a brick:Air_Handling_Unit ;
         dbc:Field_Bus1.Plant_Condenser.AHU1CLGCALL,
         dbc:Programming.Night_Purge.Night_Purge_Schedule .
 
-dbc:Audio_visual_room a brick:Room ;
-    brick:hasLocation dbc:First .
-
 dbc:Auditorium_plenum a brick:Room .
+
+dbc:Copy_room a brick:Room ;
+    brick:hasLocation dbc:Second .
+
+dbc:East_Corridor_200 a brick:Room ;
+    brick:hasLocation dbc:Second .
 
 dbc:Field_Bus1.BrowerRadiant2East.ALLZONESPRECOOLED a brick:On_Off_Status ;
     brick:bacnetPoint dbc:id-3001028 .
@@ -12922,6 +12800,27 @@ dbc:Field_Bus1.Plant_RadiantLoop.4WESTALLPRECOOLED a brick:Mode_Status ;
 dbc:Field_Bus1.Plant_RadiantLoop.4WESTCALLING a brick:On_Off_Status ;
     brick:bacnetPoint dbc:id-3000611 .
 
+dbc:Gallery a brick:Room ;
+    brick:hasLocation dbc:First .
+
+dbc:Kitchen a brick:Room ;
+    brick:hasLocation dbc:Second .
+
+dbc:Large_conference_room a brick:Room ;
+    brick:hasLocation dbc:First .
+
+dbc:Lobby_100 a brick:Room ;
+    brick:hasLocation dbc:First .
+
+dbc:Mens_restroom_200 a brick:Room ;
+    brick:hasLocation dbc:Second .
+
+dbc:Mens_restroom_300 a brick:Room ;
+    brick:hasLocation dbc:Third .
+
+dbc:Mens_restroom_400 a brick:Room ;
+    brick:hasLocation dbc:Fourth .
+
 dbc:Radiant_Floor_East_2_Zone a brick:HVAC_Zone .
 
 dbc:Radiant_Floor_East_3_Zone a brick:HVAC_Zone .
@@ -12937,6 +12836,21 @@ dbc:Schedule.RAD_FL_3_EAST a brick:Occupancy_Status ;
 dbc:Schedule.RAD_FL_4_EAST a brick:Occupancy_Status ;
     brick:bacnetPoint dbc:id-3002147 .
 
+dbc:Showers a brick:Room ;
+    brick:hasLocation dbc:Second .
+
+dbc:Small_conference_room_100 a brick:Room ;
+    brick:hasLocation dbc:First .
+
+dbc:Storage a brick:Room ;
+    brick:hasLocation dbc:Second .
+
+dbc:Suite_290 a brick:Room ;
+    brick:hasLocation dbc:Second .
+
+dbc:Suite_490 a brick:Room ;
+    brick:hasLocation dbc:Fourth .
+
 dbc:Ventilation_East_Auditorium a brick:Air_Handling_Unit,
         brick:Underfloor_Air_Plenum ;
     brick:feeds dbc:Ventilation_East_Auditorium_Zone ;
@@ -12945,6 +12859,12 @@ dbc:Ventilation_East_Auditorium a brick:Air_Handling_Unit,
         dbc:Field_Bus1.BrowerUnderfloorAud.ZN-CO2E,
         dbc:Field_Bus1.BrowerUnderfloorAud.ZN-TE,
         dbc:Field_Bus1.BrowerUnderfloorAud.ZN-TOCCE .
+
+dbc:West_Corridor_300 a brick:Room ;
+    brick:hasLocation dbc:Third .
+
+dbc:Womens_restroom_200 a brick:Room ;
+    brick:hasLocation dbc:Second .
 
 dbc:AHU_2_McQuay_East_OAH021GDAM a brick:Air_Handling_Unit ;
     brick:feeds dbc:Ventilation_East_2,
@@ -13010,12 +12930,6 @@ dbc:AHU_2_McQuay_East_OAH021GDAM a brick:Air_Handling_Unit ;
         dbc:Programming.Night_Purge.Night_Purge_Schedule,
         dbc:Schedule.AHU2_Sched .
 
-dbc:East_corridor_300 a brick:Room ;
-    brick:hasLocation dbc:Third .
-
-dbc:East_corridor_400 a brick:Room ;
-    brick:hasLocation dbc:Fourth .
-
 dbc:Field_Bus1.Plant_RadiantLoop.2EASTALLPRECOOLED a brick:Mode_Status ;
     brick:bacnetPoint dbc:id-3000618 .
 
@@ -13034,14 +12948,8 @@ dbc:Field_Bus1.Plant_RadiantLoop.4EASTALLPRECOOLED a brick:Mode_Status ;
 dbc:Field_Bus1.Plant_RadiantLoop.4EASTCALLING a brick:On_Off_Status ;
     brick:bacnetPoint dbc:id-3000612 .
 
-dbc:Gallery a brick:Room ;
-    brick:hasLocation dbc:First .
-
-dbc:Large_conference_room a brick:Room ;
-    brick:hasLocation dbc:First .
-
-dbc:Lobby_100 a brick:Room ;
-    brick:hasLocation dbc:First .
+dbc:Lobby_200 a brick:Room ;
+    brick:hasLocation dbc:Second .
 
 dbc:MAU_Greenheck_MSX112H22 a brick:Air_Handling_Unit,
         brick:Makeup_Air_Unit ;
@@ -13110,13 +13018,13 @@ dbc:MAU_Greenheck_MSX112H22 a brick:Air_Handling_Unit,
         dbc:Field_Bus1.Plant_Condenser.MUACLGCALL,
         dbc:Schedule.RESTURANT_Schedule .
 
-dbc:Small_conference_room a brick:Room ;
-    brick:hasLocation dbc:Second .
+dbc:Suite_430 a brick:Room ;
+    brick:hasLocation dbc:Fourth .
 
-dbc:Small_conference_room_100 a brick:Room ;
-    brick:hasLocation dbc:First .
+dbc:Womens_restroom_300 a brick:Room ;
+    brick:hasLocation dbc:Third .
 
-dbc:West_corridor_400 a brick:Room ;
+dbc:Womens_restroom_400 a brick:Room ;
     brick:hasLocation dbc:Fourth .
 
 dbc:Field_Bus1.BrowerAHU1.EFFDAT-SP a brick:Discharge_Air_Temperature_Setpoint,
@@ -13129,22 +13037,25 @@ dbc:Field_Bus1.BrowerAHU2.EFFDAT-SP a brick:Discharge_Air_Temperature_Setpoint,
     brick:bacnetPoint dbc:id-3000786 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Copy_room a brick:Room ;
+dbc:Meeting_room a brick:Room ;
     brick:hasLocation dbc:Second .
 
-dbc:East_Corridor_200 a brick:Room ;
+dbc:Suite_240 a brick:Room ;
     brick:hasLocation dbc:Second .
 
-dbc:Kitchen a brick:Room ;
+dbc:Suite_250 a brick:Room ;
     brick:hasLocation dbc:Second .
 
-dbc:Mens_restroom_200 a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Mens_restroom_300 a brick:Room ;
+dbc:Suite_340 a brick:Room ;
     brick:hasLocation dbc:Third .
 
-dbc:Mens_restroom_400 a brick:Room ;
+dbc:Suite_420 a brick:Room ;
+    brick:hasLocation dbc:Fourth .
+
+dbc:Suite_440 a brick:Room ;
+    brick:hasLocation dbc:Fourth .
+
+dbc:Suite_480 a brick:Room ;
     brick:hasLocation dbc:Fourth .
 
 dbc:Programming.RadiantLoopOverride.Fl2SlabCold a brick:Mode_Status ;
@@ -13165,63 +13076,6 @@ dbc:Programming.RadiantLoopOverride.Fl4SlabCold a brick:Mode_Status ;
 dbc:Programming.RadiantLoopOverride.Fl4SlabColdState a brick:Mode_Status ;
     brick:bacnetPoint dbc:id-3003970 .
 
-dbc:Showers a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Storage a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Suite_290 a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Suite_490 a brick:Room ;
-    brick:hasLocation dbc:Fourth .
-
-dbc:West_Corridor_300 a brick:Room ;
-    brick:hasLocation dbc:Third .
-
-dbc:Womens_restroom_200 a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Field_Bus1.Plant_RadiantLoop.WESTPRECOOL-EN a brick:Enable_Command ;
-    brick:bacnetPoint dbc:id-3000622 .
-
-dbc:Lobby_200 a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Meeting_room a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Suite_430 a brick:Room ;
-    brick:hasLocation dbc:Fourth .
-
-dbc:Womens_restroom_300 a brick:Room ;
-    brick:hasLocation dbc:Third .
-
-dbc:Womens_restroom_400 a brick:Room ;
-    brick:hasLocation dbc:Fourth .
-
-dbc:Suite_240 a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Suite_250 a brick:Room ;
-    brick:hasLocation dbc:Second .
-
-dbc:Suite_340 a brick:Room ;
-    brick:hasLocation dbc:Third .
-
-dbc:Suite_420 a brick:Room ;
-    brick:hasLocation dbc:Fourth .
-
-dbc:Suite_440 a brick:Room ;
-    brick:hasLocation dbc:Fourth .
-
-dbc:Suite_480 a brick:Room ;
-    brick:hasLocation dbc:Fourth .
-
-dbc:Field_Bus1.Plant_RadiantLoop.EASTPRECOOL-EN a brick:Enable_Command ;
-    brick:bacnetPoint dbc:id-3000626 .
-
 dbc:Suite_210 a brick:Room ;
     brick:hasLocation dbc:Second .
 
@@ -13231,14 +13085,17 @@ dbc:Suite_280 a brick:Room ;
 dbc:Suite_320 a brick:Room ;
     brick:hasLocation dbc:Third .
 
-dbc:Suite_400 a brick:Room ;
-    brick:hasLocation dbc:Fourth .
-
 dbc:Suite_360 a brick:Room ;
     brick:hasLocation dbc:Third .
 
+dbc:Suite_400 a brick:Room ;
+    brick:hasLocation dbc:Fourth .
+
 dbc:Auditorium a brick:Room ;
     brick:hasLocation dbc:First .
+
+dbc:Field_Bus1.Plant_RadiantLoop.WESTPRECOOL-EN a brick:Enable_Command ;
+    brick:bacnetPoint dbc:id-3000622 .
 
 dbc:Suite_270 a brick:Room ;
     brick:hasLocation dbc:Second .
@@ -13248,6 +13105,9 @@ dbc:Suite_460 a brick:Room ;
 
 dbc:Suite_300 a brick:Room ;
     brick:hasLocation dbc:Third .
+
+dbc:Field_Bus1.Plant_RadiantLoop.EASTPRECOOL-EN a brick:Enable_Command ;
+    brick:bacnetPoint dbc:id-3000626 .
 
 dbc:Field_Bus1.Plant_RadiantLoop.EVAPCLG-EN a brick:Enable_Command ;
     brick:bacnetPoint dbc:id-3000605 .
