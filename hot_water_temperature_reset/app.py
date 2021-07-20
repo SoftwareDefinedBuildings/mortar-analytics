@@ -60,11 +60,32 @@ def return_bacnet_point(df_term_query_result, point_priority):
         df_bacnet_query_result = pd.DataFrame(bacnet_query_result, columns=[str(s) for s in bacnet_query_result.vars]).drop_duplicates(subset=["bacnet_id"])
 
     else:
-        print("NO SETPOINT BACNET ID FOUND!!")
+        print("NO BACNET POINT ID FOUND!!")
         df_bacnet_query_result = None
 
     return df_bacnet_query_result
 
+def return_equipment_controlled_temp_bacnet_id(zn_t_unit_name):
+    """
+    Return the bacnet id of the controlled temperature of the defined equipment
+    """
+    point_priority = [
+        "Discharge_Air_Temperature_Sensor",
+        "Embedded_Temperature_Sensor",
+        "Discharge_Water_Temperature_Sensor",
+        "Air_Temperature_Sensor",
+        "Water_Temperature_Sensor",
+        "Temperature_Sensor"
+    ]
+
+    brick_point_class = "Temperature_Sensor"
+    brick_equipment_class = zn_t_unit_name
+
+    df_term_query_result = return_equipment_points(brick_point_class, brick_equipment_class)
+
+    sensor_bacnet_id = return_bacnet_point(df_term_query_result, point_priority)
+
+    return(sensor_bacnet_id)
 
 def return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name):
     """
@@ -73,14 +94,16 @@ def return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name):
     # define order of setpoint classes
     setpoint_priority = [
         f"Effective_Air_Temperature_{hvac_mode}_Setpoint",
+        "Effective_Air_Temperature_Setpoint",
         f"Discharge_Air_Temperature_{hvac_mode}_Setpoint",
         f"Discharge_Air_Temperature_Setpoint",
         f"{hvac_mode}_Temperature_Setpoint",
-        "Effective_Air_Temperature_Setpoint",
-        "Air_Temperature_Setpoint"
+        "Air_Temperature_Setpoint",
+        "Embedded_Temperature_Setpoint",
+        "Water_Temperature_Setpoint"
         ]
 
-    brick_point_class = f"{hvac_mode}_Temperature_Setpoint"
+    brick_point_class = f"Temperature_Setpoint"
     brick_equipment_class = zn_t_unit_name
 
     df_term_query_result = return_equipment_points(brick_point_class, brick_equipment_class)
@@ -151,15 +174,23 @@ df_unique_hw_consumers = df_hw_consumers.drop_duplicates(subset=["t_unit"])
 
 # iterate through each equipment setpoints and zone temperatures
 for i, equip_row in df_unique_hw_consumers.iterrows():
-    print(equip_row["t_unit"])
     zn_t_unit_name = equip_row["t_unit"]
     zn_t_unit_type = equip_row["equip_type"]
+    print(zn_t_unit_name)
 
     hvac_mode = "Heating"
+
+    equip_ctrl_temp_bacnet_id = return_equipment_controlled_temp_bacnet_id(zn_t_unit_name)
     equip_stpt_bacnet_id = return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name)
 
+    if equip_ctrl_temp_bacnet_id is not None:
+        print(f"Reading sensor point {equip_ctrl_temp_bacnet_id['t_unit_point'][0]} -> BACnet={equip_ctrl_temp_bacnet_id['bacnet_instance'][0]}")
+    else:
+        print("Controlled temperature not found!")
+    if equip_stpt_bacnet_id is not None:
+        print(f"with setpoint {equip_stpt_bacnet_id['t_unit_point'][0]} -> BACnet={equip_stpt_bacnet_id['bacnet_instance'][0]}\n")
+    else:
+        print("Setpoint not found!\n")
 
 
-
-
-    import pdb; pdb.set_trace()
+import pdb; pdb.set_trace()

@@ -6,7 +6,7 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 
-ext:Embedded_Temperature_Setpoint a owl:Class ;
+brick:Embedded_Temperature_Setpoint a owl:Class ;
     rdfs:label "Embedded Temperature Setpoint" ;
     rdfs:subClassOf [ a owl:Class ;
             owl:intersectionOf ( _:has_Point _:has_Embedded _:has_Temperature _:has_Setpoint ) ],
@@ -18,7 +18,7 @@ ext:Embedded_Temperature_Setpoint a owl:Class ;
         tag:Temperature .
 
 
-ext:Embedded_Temperature_Sensor a owl:Class ;
+brick:Embedded_Temperature_Sensor a owl:Class ;
     rdfs:label "Embedded Temperature Sensor" ;
     rdfs:subClassOf [ a owl:Class ;
             owl:intersectionOf ( _:has_Point [ a owl:Restriction ;
@@ -29,4 +29,4 @@ ext:Embedded_Temperature_Sensor a owl:Class ;
     brick:hasAssociatedTag tag:Embedded,
         tag:Point,
         tag:Sensor,
-        tag:Temperature.
+        tag:Temperature .
