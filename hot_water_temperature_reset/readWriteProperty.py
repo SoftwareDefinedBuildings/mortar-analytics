@@ -31,6 +31,29 @@ this_application = None
 @bacpypes_debugging
 class ReadPropertyThread(Thread):
 
+    def request_read(self, args):
+        addr, obj_id, prop_id = args[:3]
+        obj_id = ObjectIdentifier(obj_id).value
+        if prop_id.isdigit():
+            prop_id = int(prop_id)
+
+        datatype = get_datatype(obj_id[0], prop_id)
+        if not datatype:
+            raise ValueError("invalid property for object type")
+
+        # build a request
+        request = ReadPropertyRequest(
+            objectIdentifier=obj_id,
+            propertyIdentifier=prop_id,
+            )
+        request.pduDestination = Address(addr)
+
+        if len(args) == 4:
+            request.propertyArrayIndex = int(args[3])
+        if _debug: print("    - request: %r", request)
+
+        return request
+
     def run(self):
         addr = ''
         obj_type = 'analogInput'
@@ -41,25 +64,7 @@ class ReadPropertyThread(Thread):
         args = (addr, obj_id, prop_id)
 
         try:
-            addr, obj_id, prop_id = args[:3]
-            obj_id = ObjectIdentifier(obj_id).value
-            if prop_id.isdigit():
-                prop_id = int(prop_id)
-
-            datatype = get_datatype(obj_id[0], prop_id)
-            if not datatype:
-                raise ValueError("invalid property for object type")
-
-            # build a request
-            request = ReadPropertyRequest(
-                objectIdentifier=obj_id,
-                propertyIdentifier=prop_id,
-                )
-            request.pduDestination = Address(addr)
-
-            if len(args) == 4:
-                request.propertyArrayIndex = int(args[3])
-            if _debug: print("    - request: %r", request)
+            request = self.request_read(args)
 
             # make an IOCB
             iocb = IOCB(request)
@@ -115,7 +120,7 @@ class ReadPropertyThread(Thread):
 #   __main__
 #
 
-def main(ini_filename):
+def Init(ini_filename):
     global this_application
 
     ### read initialization file
@@ -151,12 +156,13 @@ def main(ini_filename):
 
         # let the device object know
         this_device.protocolServicesSupported = services_supported.value
-
         if _debug: _log.debug("after services")
 
     except Exception as error:
         if _debug: _log.debug("exception: %r", error)
 
+
+def main():
     # create a thread supervisor
     write_property_thread = ReadPropertyThread()
 
@@ -171,4 +177,5 @@ def main(ini_filename):
 
 if __name__ == "__main__":
     BACnet_init_filename = 'BACnet_init_temp_reset.ini'
-    main(BACnet_init_filename)
+    Init(BACnet_init_filename)
+    main()
