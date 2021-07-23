@@ -27,13 +27,12 @@ def return_equipment_points(brick_point_class, brick_equipment_class):
     Return defined brick point class for piece of equipment
     """
     # query to return all setpoints of equipment
-    term_query = f"""SELECT ?bacnet_id ?t_unit ?t_unit_point ?point_type  WHERE {{
+    term_query = f"""SELECT DISTINCT ?bacnet_id ?t_unit ?t_unit_point ?point_type  WHERE {{
         ?t_unit         brick:hasPoint              ?t_unit_point .
         ?t_unit_point   rdf:type/rdfs:subClassOf*   brick:{brick_point_class} .
         ?t_unit_point   brick:bacnetPoint           ?bacnet_id .
         ?t_unit_point   rdf:type                    ?point_type .
-        }}"""    #FILTER NOT EXISTS {{ ?subtype ^a    ?t_unit_point ; rdfs:subclassOf* ?point_type . FILTER ( ?subtype != ?point_type ) }}
-    # term_query = f"""SELECT * WHERE {{?t_unit      brick:hasPoint   ?t_unit_point .  ?t_unit_point  rdf:type/rdfs:subClassOf*   brick:{hvac_mode}_Temperature_Setpoint . ?t_unit_point      brick:bacnetPoint    ?bacnet_id . ?bacnet_id     brick:hasBacnetDeviceInstance   ?bacnet_instance . ?bacnet_id     brick:hasBacnetDeviceType   ?bacnet_type .}}"""
+        }}"""
 
     # execute the query
     term_query_result = g.query(term_query, initBindings={"t_unit": brick_equipment_class})
@@ -59,14 +58,16 @@ def return_bacnet_point(df_term_query_result, point_priority):
             break
 
     if bacnet_id is not None:
-        bacnet_query = f"""SELECT ?bacnet_id ?t_unit_point ?bacnet_instance ?bacnet_type WHERE {{
+        bacnet_query = f"""SELECT ?bacnet_id ?t_unit_point ?bacnet_instance ?bacnet_type ?point_type WHERE {{
             ?t_unit_point  brick:bacnetPoint                ?bacnet_id .
             ?bacnet_id     brick:hasBacnetDeviceInstance    ?bacnet_instance .
             ?bacnet_id     brick:hasBacnetDeviceType        ?bacnet_type .
+            ?t_unit_point  rdf:type                         ?point_type .
             }}"""
 
         bacnet_query_result = g.query(bacnet_query, initBindings={"bacnet_id": bacnet_id})
         df_bacnet_query_result = pd.DataFrame(bacnet_query_result, columns=[str(s) for s in bacnet_query_result.vars]).drop_duplicates(subset=["bacnet_id"])
+        df_bacnet_query_result["short_point_type"] = [shpt.split("#")[1] for shpt in df_bacnet_query_result["point_type"]]
 
     else:
         print("NO BACNET POINT ID FOUND!!")
@@ -75,7 +76,7 @@ def return_bacnet_point(df_term_query_result, point_priority):
     return df_bacnet_query_result
 
 
-def return_equipment_controlled_temp_bacnet_id(zn_t_unit_name):
+def return_equipment_controlled_temp_bacnet_point(zn_t_unit_name):
     """
     Return the bacnet id of the controlled temperature of the defined equipment
     """
@@ -93,12 +94,12 @@ def return_equipment_controlled_temp_bacnet_id(zn_t_unit_name):
 
     df_term_query_result = return_equipment_points(brick_point_class, brick_equipment_class)
 
-    sensor_bacnet_id = return_bacnet_point(df_term_query_result, point_priority)
+    sensor_bacnet_point = return_bacnet_point(df_term_query_result, point_priority)
 
-    return(sensor_bacnet_id)
+    return(sensor_bacnet_point)
 
 
-def return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name):
+def return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name):
     """
     Return setpoint for defined equipment
     """
@@ -120,18 +121,16 @@ def return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name):
 
     df_term_query_result = return_equipment_points(brick_point_class, brick_equipment_class)
 
-    setpoint_bacnet_id = return_bacnet_point(df_term_query_result, setpoint_priority)
+    setpoint_bacnet_point = return_bacnet_point(df_term_query_result, setpoint_priority)
 
-    return(setpoint_bacnet_id)
+    return(setpoint_bacnet_point)
 
 
-def bacnet_read(bacnet_id):
-    #address  = bacnet_id['address']
+def bacnet_read(bacnet_point, read_attr='presentValue'):
+    #address  = bacnet_point['address']
     address   = '' # TODO get from graph
-    obj_type = str(bacnet_id['bacnet_type'][0])
-    obj_inst = int(bacnet_id['bacnet_instance'][0])
-
-    read_attr = 'presentValue'
+    obj_type = str(bacnet_point['bacnet_type'][0])
+    obj_inst = int(bacnet_point['bacnet_instance'][0])
 
     args = [address, obj_type, obj_inst, read_attr]
     value_read = BACpypesAPP.read_prop(args)
@@ -139,55 +138,84 @@ def bacnet_read(bacnet_id):
     return value_read
 
 
-def print_bacnet_point(equip_ctrl_temp_bacnet_id, equip_stpt_bacnet_id, inside_bacnet=False):
+def print_bacnet_point(bacnet_point, inside_bacnet=False, read_attr='presentValue'):
     """
     Print point name and info or read value off the bacnet network
     """
-    if not inside_bacnet:
-        if equip_ctrl_temp_bacnet_id is not None:
-            print(f"Reading sensor point {equip_ctrl_temp_bacnet_id['t_unit_point'][0]} -> BACnet={equip_ctrl_temp_bacnet_id['bacnet_instance'][0]}")
-        else:
-            print("Controlled temperature not found!")
-        if equip_stpt_bacnet_id is not None:
-            print(f"with setpoint {equip_stpt_bacnet_id['t_unit_point'][0]} -> BACnet={equip_stpt_bacnet_id['bacnet_instance'][0]}")
-        else:
-            print("Setpoint not found!")
-
+    if bacnet_point is not None:
+        class_name = bacnet_point['short_point_type'][0]
+        point_name = bacnet_point['t_unit_point'][0].split('#')[1]
+        bacnet_id = bacnet_point['bacnet_instance'][0]
     else:
+        print("BACnet point not found in brick model!")
+        return None
 
-        # when app is running inside the BACnet network
-        if equip_ctrl_temp_bacnet_id is not None:
-            value_read = bacnet_read(equip_ctrl_temp_bacnet_id)
-            print(f"{equip_ctrl_temp_bacnet_id['t_unit_point'][0]}")
-            print(f"Reading sensor points = {value_read}")
-        else:
-            print("Controlled temperature not found!")
+    if not inside_bacnet:
+        print(f"{point_name} ({class_name}) has BACnet ID of {bacnet_id}")
+    else:
+        value_read = bacnet_read(bacnet_point, read_attr=read_attr)
+        print(f"Reading {point_name} ({class_name}) = {value_read}")
 
-        if equip_stpt_bacnet_id is not None:
-            value_read = bacnet_read(equip_stpt_bacnet_id)
-            print(f"{equip_stpt_bacnet_id['t_unit_point'][0]}")
-            print(f"Reading setpoint points = {value_read}")
-        else:
-            print("Setpoint not found!")
+
+
+
+# def print_bacnet_point(equip_ctrl_temp_bacnet_point, equip_stpt_bacnet_point, inside_bacnet=False):
+#     """
+#     Print point name and info or read value off the bacnet network
+#     """
+
+
+
+#     if not inside_bacnet:
+#         if equip_ctrl_temp_bacnet_point is not None:
+#             print(f"Reading sensor point {equip_ctrl_temp_bacnet_point['t_unit_point'][0]} -> BACnet={equip_ctrl_temp_bacnet_point['bacnet_instance'][0]}")
+#         else:
+#             print("Controlled temperature not found!")
+#         if equip_stpt_bacnet_point is not None:
+#             print(f"with setpoint {equip_stpt_bacnet_point['t_unit_point'][0]} -> BACnet={equip_stpt_bacnet_point['bacnet_instance'][0]}")
+#         else:
+#             print("Setpoint not found!")
+
+#     else:
+
+#         # when app is running inside the BACnet network
+#         if equip_ctrl_temp_bacnet_point is not None:
+#             value_read = bacnet_read(equip_ctrl_temp_bacnet_point)
+#             print(f"{equip_ctrl_temp_bacnet_point['t_unit_point'][0]}")
+#             print(f"Reading sensor points = {value_read}")
+#         else:
+#             print("Controlled temperature not found!")
+
+#         if equip_stpt_bacnet_point is not None:
+#             value_read = bacnet_read(equip_stpt_bacnet_point)
+#             print(f"{equip_stpt_bacnet_point['t_unit_point'][0]}")
+#             print(f"Reading setpoint points = {value_read}")
+#         else:
+#             print("Setpoint not found!")
 
 
 # load schema files
 g = brickschema.Graph()
-g.load_file(brick_schema_file)
-[g.load_file(fext) for fext in brick_extensions]
-g.load_file(bldg_brick_model)
 
-# expand Brick graph
-print(f"Starting graph has {len(g)} triples")
+if False:
+    g.load_file(brick_schema_file)
+    [g.load_file(fext) for fext in brick_extensions]
+    g.load_file(bldg_brick_model)
 
-g.expand(profile="owlrl")
+    # expand Brick graph
+    print(f"Starting graph has {len(g)} triples")
 
-print(f"Inferred graph has {len(g)} triples")
+    g.expand(profile="owlrl")
 
-# serialize inferred Brick to output
-with open("dbc_brick_expanded.ttl", "wb") as fp:
-    fp.write(g.serialize(format="turtle").rstrip())
-    fp.write(b"\n")
+    print(f"Inferred graph has {len(g)} triples")
+
+    # serialize inferred Brick to output
+    with open("dbc_brick_expanded.ttl", "wb") as fp:
+        fp.write(g.serialize(format="turtle").rstrip())
+        fp.write(b"\n")
+else:
+    expanded_brick_model = "dbc_brick_expanded.ttl"
+    g.load_file(expanded_brick_model)
 
 # import pdb; pdb.set_trace()
 
@@ -238,10 +266,11 @@ for i, equip_row in df_unique_hw_consumers.iterrows():
 
     hvac_mode = "Heating"
 
-    equip_ctrl_temp_bacnet_id = return_equipment_controlled_temp_bacnet_id(zn_t_unit_name)
-    equip_stpt_bacnet_id = return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name)
+    equip_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zn_t_unit_name)
+    equip_stpt_bacnet_point = return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name)
 
-    print_bacnet_point(equip_ctrl_temp_bacnet_id, equip_stpt_bacnet_id, inside_bacnet=True)
+    print_bacnet_point(equip_ctrl_temp_bacnet_point, inside_bacnet=False, read_attr='presentValue')
+    print_bacnet_point(equip_stpt_bacnet_point, inside_bacnet=False, read_attr='presentValue')
 
 
 import pdb; pdb.set_trace()
