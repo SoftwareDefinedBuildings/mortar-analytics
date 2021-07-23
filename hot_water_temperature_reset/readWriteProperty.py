@@ -145,8 +145,8 @@ def Init(ini_filename):
     address = opts.get('BACpypes', 'address')
 
     try:
-        if _debug: _log.debug("initialization")
-        if _debug: _log.debug("    - args: %r", (opts))
+        if _debug: print("initialization")
+        if _debug: print("    - args: %r", (opts))
 
         # make a device object
         this_device = LocalDeviceObject(
@@ -162,41 +162,42 @@ def Init(ini_filename):
 
         # get the services supported
         services_supported = this_application.get_services_supported()
-        if _debug: _log.debug("    - services_supported: %r", services_supported)
+        if _debug: print("    - services_supported: %r", services_supported)
 
         # let the device object know
         this_device.protocolServicesSupported = services_supported.value
-        if _debug: _log.debug("after services")
+        if _debug: print("after services")
 
     except Exception as error:
-        if _debug: _log.debug("exception: %r", error)
+        if _debug: print("exception: %r", error)
 
-
-def main(args):
+def read_prop(args):
     # create a thread supervisor
-    write_property_thread = ReadPropertyThread()
+    read_property_thread = ReadPropertyThread()
 
     # input BACnet request arguments
-    write_property_thread.take_args(args)
+    read_property_thread.take_args(args)
 
     # start it running when the core is running
-    deferred(write_property_thread.start)
+    deferred(read_property_thread.start)
 
-    _log.debug("running")
+    if _debug: print("running")
 
     run()
 
-    _log.debug("fini")
+    if _debug: print("fini")
+    return valueRead
+
 
 if __name__ == "__main__":
     BACnet_init_filename = 'BACnet_init_temp_reset.ini'
     Init(BACnet_init_filename)
 
-    addr = '10.21.50.71'
+    addr = ''
     obj_type = 'analogInput'
     obj_inst = 3000366
     prop_id = 'presentValue'
 
     args = (addr, obj_type, obj_inst, prop_id)
 
-    main(args)
+    read_prop(args)
