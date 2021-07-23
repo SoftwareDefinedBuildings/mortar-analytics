@@ -71,6 +71,9 @@ class ReadPropertyThread(Thread):
         return args
 
     def run(self):
+        global valueRead
+        valueRead = None
+
         args = self.get_args()
 
         try:
@@ -111,7 +114,8 @@ class ReadPropertyThread(Thread):
                     value = apdu.propertyValue.cast_out(datatype)
                 if _debug: print("    - value: %r", value)
 
-                sys.stdout.write(str(value) + '\n')
+                #sys.stdout.write(str(value) + '\n')
+                valueRead = value
                 if hasattr(value, 'debug_contents'):
                     value.debug_contents(file=sys.stdout)
                 sys.stdout.flush()
@@ -200,4 +204,6 @@ if __name__ == "__main__":
 
     args = (addr, obj_type, obj_inst, prop_id)
 
-    read_prop(args)
+    value = read_prop(args)
+
+    print(value)
