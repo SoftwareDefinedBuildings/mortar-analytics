@@ -1,7 +1,16 @@
 import brickschema
+import sys
 from os.path import join
 import pandas as pd
 
+# BACnet libraries
+# sys.path.append("/etc/Github/brick-field_study/bacnet_explore/")
+# import BACpypes_applications as BACpypesAPP
+
+import readWriteProperty as BACpypesAPP
+
+BACnet_init_filename = 'BACnet_init_temp_reset.ini'
+BACpypesAPP.Init(BACnet_init_filename)
 
 # define brick schema, extension, and building model
 schema_folder = join("./", "schema_and_models")
@@ -118,14 +127,16 @@ def return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name):
 
 def bacnet_read(bacnet_id):
     #address  = bacnet_id['address']
-    address   = '10.21.50.71' # TODO get from graph
+    address   = '' # TODO get from graph
     obj_type = str(bacnet_id['bacnet_type'][0])
-    instance = int(bacnet_id['bacnet_instance'][0])
+    obj_inst = int(bacnet_id['bacnet_instance'][0])
 
     read_attr = 'presentValue'
 
-    args = [address, obj_type, instance, read_attr]
-    import pdb; pdb.set_trace()
+    args = [address, obj_type, obj_inst, read_attr]
+    value_read = BACpypesAPP.read_prop(args)
+
+    return value_read
 
 
 def print_bacnet_point(equip_ctrl_temp_bacnet_id, equip_stpt_bacnet_id, inside_bacnet=False):
@@ -138,21 +149,26 @@ def print_bacnet_point(equip_ctrl_temp_bacnet_id, equip_stpt_bacnet_id, inside_b
         else:
             print("Controlled temperature not found!")
         if equip_stpt_bacnet_id is not None:
-            print(f"with setpoint {equip_stpt_bacnet_id['t_unit_point'][0]} -> BACnet={equip_stpt_bacnet_id['bacnet_instance'][0]}\n")
+            print(f"with setpoint {equip_stpt_bacnet_id['t_unit_point'][0]} -> BACnet={equip_stpt_bacnet_id['bacnet_instance'][0]}")
         else:
-            print("Setpoint not found!\n")
-        import pdb; pdb.set_trace()
+            print("Setpoint not found!")
+
     else:
+
         # when app is running inside the BACnet network
         if equip_ctrl_temp_bacnet_id is not None:
-            bacnet_read(equip_ctrl_temp_bacnet_id)
+            value_read = bacnet_read(equip_ctrl_temp_bacnet_id)
+            print(f"{equip_ctrl_temp_bacnet_id['t_unit_point'][0]}")
+            print(f"Reading sensor points = {value_read}")
         else:
             print("Controlled temperature not found!")
-        if equip_stpt_bacnet_id is not None:
-            bacnet_read(equip_stpt_bacnet_id)
-        else:
-            print("Setpoint not found!\n")
 
+        if equip_stpt_bacnet_id is not None:
+            value_read = bacnet_read(equip_stpt_bacnet_id)
+            print(f"{equip_stpt_bacnet_id['t_unit_point'][0]}")
+            print(f"Reading setpoint points = {value_read}")
+        else:
+            print("Setpoint not found!")
 
 
 # load schema files
@@ -218,14 +234,14 @@ df_unique_hw_consumers = df_hw_consumers.drop_duplicates(subset=["t_unit"])
 for i, equip_row in df_unique_hw_consumers.iterrows():
     zn_t_unit_name = equip_row["t_unit"]
     zn_t_unit_type = equip_row["equip_type"]
-    print(zn_t_unit_name)
+    print(f"\n{zn_t_unit_name}")
 
     hvac_mode = "Heating"
 
     equip_ctrl_temp_bacnet_id = return_equipment_controlled_temp_bacnet_id(zn_t_unit_name)
     equip_stpt_bacnet_id = return_equipment_setpoint_bacnet_id(hvac_mode, zn_t_unit_name)
 
-    print_bacnet_point(equip_ctrl_temp_bacnet_id, equip_stpt_bacnet_id, inside_bacnet=False)
+    print_bacnet_point(equip_ctrl_temp_bacnet_id, equip_stpt_bacnet_id, inside_bacnet=True)
 
 
 import pdb; pdb.set_trace()
