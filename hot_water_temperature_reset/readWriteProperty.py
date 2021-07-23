@@ -22,7 +22,7 @@ from bacpypes.app import BIPSimpleApplication
 from bacpypes.local.device import LocalDeviceObject
 
 # some debugging
-_debug = 1
+_debug = 0
 _log = ModuleLogger(globals())
 
 # globals
@@ -54,14 +54,24 @@ class ReadPropertyThread(Thread):
 
         return request
 
-    def run(self):
-        addr = ''
-        obj_type = 'analogInput'
-        obj_inst = 3000366
-        prop_id = 'presentValue'
+    def take_args(self, args):
+        self._args = args
+
+    def get_args(self):
+        temp_args = self._args
+
+        addr, obj_type, obj_inst, prop_id = temp_args[:4]
         obj_id = f"{obj_type}:{obj_inst}"
 
-        args = (addr, obj_id, prop_id)
+        if len(temp_args) == 5:
+            args = (addr, obj_id, prop_id, temp_args[4])
+        else:
+            args = (addr, obj_id, prop_id)
+
+        return args
+
+    def run(self):
+        args = self.get_args()
 
         try:
             request = self.request_read(args)
@@ -162,9 +172,12 @@ def Init(ini_filename):
         if _debug: _log.debug("exception: %r", error)
 
 
-def main():
+def main(args):
     # create a thread supervisor
     write_property_thread = ReadPropertyThread()
+
+    # input BACnet request arguments
+    write_property_thread.take_args(args)
 
     # start it running when the core is running
     deferred(write_property_thread.start)
@@ -178,4 +191,12 @@ def main():
 if __name__ == "__main__":
     BACnet_init_filename = 'BACnet_init_temp_reset.ini'
     Init(BACnet_init_filename)
-    main()
+
+    addr = '10.21.50.71'
+    obj_type = 'analogInput'
+    obj_inst = 3000366
+    prop_id = 'presentValue'
+
+    args = (addr, obj_type, obj_inst, prop_id)
+
+    main(args)
