@@ -1,5 +1,4 @@
-
-import sys
+import sys, time
 import configparser
 from threading import Thread
 
@@ -350,7 +349,7 @@ def read_prop(args):
 
 def write_prop(args):
     # create a thread supervisor
-    write_property_thread =WritePropertyThread()
+    write_property_thread = WritePropertyThread()
 
     # input BACnet request arguments
     write_property_thread.take_args(args)
@@ -364,18 +363,36 @@ def write_prop(args):
 
     if _debug: print("fini")
 
+    time.sleep(2)
+
 
 if __name__ == "__main__":
     BACnet_init_filename = 'BACnet_init_temp_reset.ini'
     Init(BACnet_init_filename)
 
     addr = ''
-    obj_type = 'analogInput'
-    obj_inst = 3000366
+    obj_type = 'analogValue'
+    obj_inst = 3000369
     prop_id = 'presentValue'
 
-    args = (addr, obj_type, obj_inst, prop_id)
+    # test read method
+    read_args = (addr, obj_type, obj_inst, prop_id)
 
-    value = read_prop(args)
+    print(f"Reading current value...")
+    old_value = read_prop(read_args)
+    print(old_value)
 
-    print(value)
+    # Test write method
+    new_value = 70.5
+
+    write_args = (addr, obj_type, obj_inst, prop_id, new_value)
+    write_prop(write_args)
+
+    print(f"Wrote new value of {read_prop(read_args)} replacing old value of {old_value}")
+
+    print(f"Switching back to old value...")
+
+    write_prop((addr, obj_type, obj_inst, prop_id, old_value))
+    print(f"Confirm that it switched to old value, {read_prop(read_args)}")
+
+    import pdb; pdb.set_trace()
