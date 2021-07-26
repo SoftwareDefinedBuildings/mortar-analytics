@@ -58,10 +58,12 @@ def return_bacnet_point(df_term_query_result, point_priority):
             break
 
     if bacnet_id is not None:
-        bacnet_query = f"""SELECT ?bacnet_id ?t_unit_point ?bacnet_instance ?bacnet_type ?point_type WHERE {{
+        bacnet_query = f"""SELECT ?bacnet_id ?t_unit_point ?bacnet_instance ?bacnet_type ?bacnet_addr ?point_type WHERE {{
             ?t_unit_point  brick:bacnetPoint                ?bacnet_id .
             ?bacnet_id     brick:hasBacnetDeviceInstance    ?bacnet_instance .
             ?bacnet_id     brick:hasBacnetDeviceType        ?bacnet_type .
+            ?bacnet_id     brick:accessedAt                 ?bacnet_net .
+            ?bacnet_net    dbc:connstring                   ?bacnet_addr .
             ?t_unit_point  rdf:type                         ?point_type .
             }}"""
 
@@ -127,8 +129,7 @@ def return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name):
 
 
 def bacnet_read(bacnet_point, read_attr='presentValue'):
-    #address  = bacnet_point['address']
-    address   = '' # TODO get from graph
+    address  = str(bacnet_point['bacnet_addr'][0])
     obj_type = str(bacnet_point['bacnet_type'][0])
     obj_inst = int(bacnet_point['bacnet_instance'][0])
 
