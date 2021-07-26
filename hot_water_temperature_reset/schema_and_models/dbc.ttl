@@ -4708,7 +4708,7 @@ dbc:Field_Bus1.Plant_Boilers.HWS-T a brick:Hot_Water_Supply_Temperature_Sensor ;
     brick:bacnetPoint dbc:id-3000577 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.Plant_Boilers.HWS-TEffSetpnt a brick:Hot_Water_Supply_Temperature_Setpoint ;
+dbc:Field_Bus1.Plant_Boilers.HWS-TEffSetpnt a brick:Supply_Hot_Water_Temperature_Setpoint ;
     brick:bacnetPoint dbc:id-3002895 ;
     brick:hasUnit unit:DEG_F .
 
