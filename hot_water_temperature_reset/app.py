@@ -158,42 +158,6 @@ def print_bacnet_point(bacnet_point, inside_bacnet=False, read_attr='presentValu
 
 
 
-
-# def print_bacnet_point(equip_ctrl_temp_bacnet_point, equip_stpt_bacnet_point, inside_bacnet=False):
-#     """
-#     Print point name and info or read value off the bacnet network
-#     """
-
-
-
-#     if not inside_bacnet:
-#         if equip_ctrl_temp_bacnet_point is not None:
-#             print(f"Reading sensor point {equip_ctrl_temp_bacnet_point['t_unit_point'][0]} -> BACnet={equip_ctrl_temp_bacnet_point['bacnet_instance'][0]}")
-#         else:
-#             print("Controlled temperature not found!")
-#         if equip_stpt_bacnet_point is not None:
-#             print(f"with setpoint {equip_stpt_bacnet_point['t_unit_point'][0]} -> BACnet={equip_stpt_bacnet_point['bacnet_instance'][0]}")
-#         else:
-#             print("Setpoint not found!")
-
-#     else:
-
-#         # when app is running inside the BACnet network
-#         if equip_ctrl_temp_bacnet_point is not None:
-#             value_read = bacnet_read(equip_ctrl_temp_bacnet_point)
-#             print(f"{equip_ctrl_temp_bacnet_point['t_unit_point'][0]}")
-#             print(f"Reading sensor points = {value_read}")
-#         else:
-#             print("Controlled temperature not found!")
-
-#         if equip_stpt_bacnet_point is not None:
-#             value_read = bacnet_read(equip_stpt_bacnet_point)
-#             print(f"{equip_stpt_bacnet_point['t_unit_point'][0]}")
-#             print(f"Reading setpoint points = {value_read}")
-#         else:
-#             print("Setpoint not found!")
-
-
 # load schema files
 g = brickschema.Graph()
 
