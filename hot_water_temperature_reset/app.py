@@ -85,6 +85,7 @@ def return_equipment_controlled_temp_bacnet_point(zn_t_unit_name):
     point_priority = [
         "Discharge_Air_Temperature_Sensor",
         "Embedded_Temperature_Sensor",
+        "Hot_Water_Supply_Temperature_Sensor",
         "Discharge_Water_Temperature_Sensor",
         "Air_Temperature_Sensor",
         "Water_Temperature_Sensor",
@@ -111,6 +112,7 @@ def return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name):
         "Effective_Air_Temperature_Setpoint",
         f"Discharge_Air_Temperature_{hvac_mode}_Setpoint",
         f"Discharge_Air_Temperature_Setpoint",
+        "Supply_Hot_Water_Temperature_Setpoint",
         "Discharge_Water_Temperature_Setpoint",
         f"{hvac_mode}_Temperature_Setpoint",
         "Air_Temperature_Setpoint",
@@ -222,6 +224,14 @@ for consumer in hw_consumers:
 df_hw_consumers = pd.concat(df_container, ignore_index=True, sort=False)
 df_unique_hw_consumers = df_hw_consumers.drop_duplicates(subset=["t_unit"])
 
+# read boiler equipement supply and setpoint temperatures
+for boiler in df_hw_consumers['boiler'].unique():
+    boiler_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(boiler)
+    boiler_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', boiler)
+
+    print_bacnet_point(boiler_ctrl_temp_bacnet_point, inside_bacnet=True, read_attr='presentValue')
+    print_bacnet_point(boiler_stpt_bacnet_point, inside_bacnet=True, read_attr='presentValue')
+
 
 # iterate through each equipment setpoints and zone temperatures
 for i, equip_row in df_unique_hw_consumers.iterrows():
@@ -234,8 +244,8 @@ for i, equip_row in df_unique_hw_consumers.iterrows():
     equip_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zn_t_unit_name)
     equip_stpt_bacnet_point = return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name)
 
-    print_bacnet_point(equip_ctrl_temp_bacnet_point, inside_bacnet=False, read_attr='presentValue')
-    print_bacnet_point(equip_stpt_bacnet_point, inside_bacnet=False, read_attr='presentValue')
+    print_bacnet_point(equip_ctrl_temp_bacnet_point, inside_bacnet=True, read_attr='presentValue')
+    print_bacnet_point(equip_stpt_bacnet_point, inside_bacnet=True, read_attr='presentValue')
 
 
 import pdb; pdb.set_trace()
