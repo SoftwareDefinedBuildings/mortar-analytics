@@ -130,6 +130,15 @@ def return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name):
     return(setpoint_bacnet_point)
 
 
+def return_zone_temp_bacnet_point(zn_t_unit_name):
+    """
+    Return zone temperature for the zone that is served
+    by the defined terminal unit
+    """
+
+    pass
+
+
 def bacnet_read(bacnet_point, read_attr='presentValue'):
     address  = str(bacnet_point['bacnet_addr'][0])
     obj_type = str(bacnet_point['bacnet_type'][0])
@@ -203,6 +212,8 @@ hw_direct_consumers = """SELECT * WHERE {
   ?boiler     rdf:type/rdfs:subClassOf?   brick:Boiler .
   ?boiler     brick:feeds                 ?t_unit .
   ?t_unit     rdf:type                    ?equip_type .
+  ?t_unit     brick:feeds                 ?room_space .
+  ?room_space rdf:type/rdfs:subClassOf?   ?HVAC_Zone .
 }
 """
 
@@ -212,6 +223,8 @@ hw_indirect_consumers = """ SELECT * WHERE {
     ?equip      brick:feeds                 ?t_unit .
     ?t_unit     rdf:type/rdfs:subClassOf?   brick:Terminal_Unit .
     ?t_unit     rdf:type                    ?equip_type .
+    ?t_unit     brick:feeds                 ?room_space .
+    ?room_space rdf:type/rdfs:subClassOf?   ?HVAC_Zone .
 }"""
 
 hw_consumers = [hw_direct_consumers, hw_indirect_consumers]
@@ -224,13 +237,15 @@ for consumer in hw_consumers:
 df_hw_consumers = pd.concat(df_container, ignore_index=True, sort=False)
 df_unique_hw_consumers = df_hw_consumers.drop_duplicates(subset=["t_unit"])
 
+read_bacnet = True
+
 # read boiler equipement supply and setpoint temperatures
 for boiler in df_hw_consumers['boiler'].unique():
     boiler_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(boiler)
     boiler_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', boiler)
 
-    print_bacnet_point(boiler_ctrl_temp_bacnet_point, inside_bacnet=True, read_attr='presentValue')
-    print_bacnet_point(boiler_stpt_bacnet_point, inside_bacnet=True, read_attr='presentValue')
+    print_bacnet_point(boiler_ctrl_temp_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
+    print_bacnet_point(boiler_stpt_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
 
 
 # iterate through each equipment setpoints and zone temperatures
@@ -244,8 +259,18 @@ for i, equip_row in df_unique_hw_consumers.iterrows():
     equip_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zn_t_unit_name)
     equip_stpt_bacnet_point = return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name)
 
-    print_bacnet_point(equip_ctrl_temp_bacnet_point, inside_bacnet=True, read_attr='presentValue')
-    print_bacnet_point(equip_stpt_bacnet_point, inside_bacnet=True, read_attr='presentValue')
+    print_bacnet_point(equip_ctrl_temp_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
+    print_bacnet_point(equip_stpt_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
+
+
+# iterate through each zone setpoints and zone temperature
+for zone in df_hw_consumers['room_space'].unique():
+    zone_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zone)
+    zone_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', zone)
+
+    print_bacnet_point(zone_ctrl_temp_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
+    print_bacnet_point(zone_stpt_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
+
 
 
 import pdb; pdb.set_trace()
