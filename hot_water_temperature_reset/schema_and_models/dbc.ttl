@@ -12654,8 +12654,7 @@ dbc:Ventilation_West_4 a brick:Underfloor_Air_Plenum ;
         dbc:Field_Bus1.BrowerUnderfloor4th.ZN-TW,
         dbc:Field_Bus1.BrowerUnderfloor4th.Zn4WOcc-BypassTime .
 
-dbc:Ventilation_West_Auditorium a brick:Air_Handling_Unit,
-        brick:Underfloor_Air_Plenum ;
+dbc:Ventilation_West_Auditorium a brick:Underfloor_Air_Plenum ;
     brick:feeds dbc:Ventilation_West_Auditorium_Zone ;
     brick:hasPoint dbc:Field_Bus1.BrowerAHU1.AUDW-ZT,
         dbc:Field_Bus1.BrowerAHU1.EFFDAT-SP,
@@ -12851,8 +12850,7 @@ dbc:Suite_290 a brick:Room ;
 dbc:Suite_490 a brick:Room ;
     brick:hasLocation dbc:Fourth .
 
-dbc:Ventilation_East_Auditorium a brick:Air_Handling_Unit,
-        brick:Underfloor_Air_Plenum ;
+dbc:Ventilation_East_Auditorium a brick:Underfloor_Air_Plenum ;
     brick:feeds dbc:Ventilation_East_Auditorium_Zone ;
     brick:hasPoint dbc:Field_Bus1.BrowerAHU1.AUDE-ZT,
         dbc:Field_Bus1.BrowerAHU2.EFFDAT-SP,
