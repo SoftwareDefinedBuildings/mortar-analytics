@@ -1,6 +1,9 @@
 import pymortar
 import os
 import pandas as pd
+import numpy as np
+
+MORTAR_URL = ""
 
 def _query_and_qualify(sensor):
     """
@@ -18,27 +21,27 @@ def _query_and_qualify(sensor):
     query : dictionary with query and sensor
     """
     # connect to client
-    client = pymortar.Client()
+    client = pymortar.Client(MORTAR_URL)
 
     # initialize container for query information
     query = dict()
 
     # define queries for input sensors and setpoints
-    sensor_query = """SELECT ?sensor WHERE {{
+    sensor_query = """SELECT ?sensor ?equip WHERE {{
         ?sensor    rdf:type/rdfs:subClassOf*     brick:{0}_Sensor .
-        ?sensor    bf:isPointOf ?equip .
-    }};""".format(sensor)
+        ?sensor    brick:isPointOf ?equip .
+    }}""".format(sensor)
 
     setpoint_query = """SELECT ?sp ?equip WHERE {{
         ?sp    rdf:type/rdfs:subClassOf*     brick:{0}_Setpoint .
-        ?sp    bf:isPointOf ?equip .
-    }};""".format(sensor)
+        ?sp    brick:isPointOf ?equip .
+    }}""".format(sensor)
 
     # find sites with input sensors and setpoints
-    qualify_resp = client.qualify([sensor_query, setpoint_query])
-    if qualify_resp.error != "":
-        print("ERROR: ", qualify_resp.error)
-        os.exit(1)
+    qualify_resp = client.qualify({"measurement": sensor_query, "setpoint": setpoint_query})
+    # if qualify_resp.error != "":
+    #     print("ERROR: ", qualify_resp.error)
+    #     os.exit(1)
 
     # save queries and sensor information
     query['query'] = dict()
@@ -75,61 +78,79 @@ def _fetch(qualify_resp, query, eval_start_time, eval_end_time, window=15):
     fetch_resp : Mortar FetchResponse object
 
     """
+    # connect to client
+    client = pymortar.Client(MORTAR_URL)
+
     sensor         = query['sensor']
     sensor_query   = query['query']['sensor']
     setpoint_query = query['query']['setpoint']
 
     # build the fetch request
-    request = pymortar.FetchRequest(
-        sites=qualify_resp.sites,
-        views=[
-            pymortar.View(
-                name="{}_sensors".format(sensor),
-                definition=sensor_query,
-            ),
-            pymortar.View(
-                name="{}_sps".format(sensor),
-                definition=setpoint_query,
-            )
-        ],
-        dataFrames=[
-            pymortar.DataFrame(
-                name="sensors",
-                aggregation=pymortar.MEAN,
-                window="{}m".format(window),
-                timeseries=[
-                    pymortar.Timeseries(
-                        view="{}_sensors".format(sensor),
-                        dataVars=["?sensor"],
-                    )
-                ]
-            ),
-            pymortar.DataFrame(
-                name="setpoints",
-                aggregation=pymortar.MEAN,
-                window="{}m".format(window),
-                timeseries=[
-                    pymortar.Timeseries(
-                        view="{}_sps".format(sensor),
-                        dataVars=["?sp"],
-                    )
-                ]
-            )
-        ],
-        time=pymortar.TimeParams(
-            start=eval_start_time,
-            end=eval_end_time,
-        )
-    )
+    avail_sites = qualify_resp.sites
+
+    # request = pymortar.FetchRequest(
+    #     sites=req_sites,
+    #     views=[
+    #         pymortar.View(
+    #             name="{}_sensors".format(sensor),
+    #             definition=sensor_query,
+    #         ),
+    #         pymortar.View(
+    #             name="{}_sps".format(sensor),
+    #             definition=setpoint_query,
+    #         )
+    #     ],
+    #     dataFrames=[
+    #         pymortar.DataFrame(
+    #             name="sensors",
+    #             aggregation=pymortar.MEAN,
+    #             window="{}m".format(window),
+    #             timeseries=[
+    #                 pymortar.Timeseries(
+    #                     view="{}_sensors".format(sensor),
+    #                     dataVars=["?sensor"],
+    #                 )
+    #             ]
+    #         ),
+    #         pymortar.DataFrame(
+    #             name="setpoints",
+    #             aggregation=pymortar.MEAN,
+    #             window="{}m".format(window),
+    #             timeseries=[
+    #                 pymortar.Timeseries(
+    #                     view="{}_sps".format(sensor),
+    #                     dataVars=["?sp"],
+    #                 )
+    #             ]
+    #         )
+    #     ],
+    #     time=pymortar.TimeParams(
+    #         start=eval_start_time,
+    #         end=eval_end_time,
+    #     )
+    # )
 
     # call the fetch api
-    client = pymortar.Client()
-    fetch_resp = client.fetch(request)
-    print(fetch_resp)
+    # fetch_resp = client.fetch(request)
+    # print(fetch_resp)
+
+    # fetch point metadata
+    sensor_view = client.sparql(sensor_query, sites=avail_sites).reset_index(drop=True)
+    setpoint_view = client.sparql(setpoint_query, sites=avail_sites).reset_index(drop=True)
+
+    fetch_resp = dict()
+    fetch_resp['sensor'] = sensor_view
+    fetch_resp['setpoint'] = setpoint_view
+
+    # save time parameters
+    fetch_resp['time'] = dict()
+    fetch_resp['time']['start'] = eval_start_time
+    fetch_resp['time']['end'] = eval_end_time
+    fetch_resp['time']['window'] = window
 
     return fetch_resp
 
-def _clean(sensor, fetch_resp):
+def _clean_metadata(fetch_resp):
     """
     Clean data by deleting streams with zero values.
 
@@ -149,17 +170,32 @@ def _clean(sensor, fetch_resp):
 
     """
     # get all the equipment we will run the analysis for. Equipment relates sensors and setpoints
-    equipment = [r[0] for r in fetch_resp.query("select distinct equip from {}_sensors".format(sensor))]
+    sensor_view = fetch_resp['sensor']
+    setpoint_view = fetch_resp['setpoint']
 
-    # find sensor measurements that aren't just all zeros
-    valid_sensor_cols   = (fetch_resp['sensors'] > 0).any().where(lambda x: x).dropna().index
-    sensor_df           = fetch_resp['sensors'][valid_sensor_cols]
-    setpoint_df         = fetch_resp['setpoints']
+    comb_metadata = pd.merge(sensor_view, setpoint_view, how='outer', on=['equip', 'site'])
+    comb_metadata = comb_metadata.dropna().reset_index(drop=True)
 
-    return sensor_df, setpoint_df, equipment
+    # equipment = [r[0] for r in fetch_resp.query("select distinct equip from {}_sensors".format(sensor))]
 
+    # # find sensor measurements that aren't just all zeros
+    # valid_sensor_cols   = (fetch_resp['sensors'] > 0).any().where(lambda x: x).dropna().index
+    # sensor_df           = fetch_resp['sensors'][valid_sensor_cols]
+    # setpoint_df         = fetch_resp['setpoints']
 
-def _analyze(query, fetch_resp, th_type='abs', th_diff=0.25, th_time=15, window=15):
+    return comb_metadata
+
+def _clean_df(sensor_df, setpoint_df):
+    """
+    Match and clean data from sensor and setpoints
+    """
+    df = pd.merge(sensor_df, setpoint_df, how='outer', on=['time'])
+    df = df.dropna().reset_index(drop=True)
+    df = df.rename(columns={'value_x': 'sensor_val', 'id_x': 'sensor_id', 'value_y': 'setpoint_val', 'id_y': 'setpoint_id'})
+
+    return df
+
+def _analyze(query, fetch_resp, th_type='abs', th_diff=0.25, th_time=15):
     """
     Parameters
     ----------
@@ -194,73 +230,99 @@ def _analyze(query, fetch_resp, th_type='abs', th_diff=0.25, th_time=15, window=
         where '<sensor>' states the sensor type and '<analysis>' states the type of analysis performed.
 
     """
+    # connect to client
+    client = pymortar.Client(MORTAR_URL)
 
     sensor  = query['sensor']
-    sensor_df, setpoint_df, equipment = _clean(sensor, fetch_resp)
+    comb_metadata = _clean_metadata(fetch_resp)
+
+    start = fetch_resp['time']['start']
+    end = fetch_resp['time']['end']
+    window = fetch_resp['time']['window']
     records = []
 
-    for idx, equip in enumerate(equipment):
-        # for each equipment, pull the UUID for the sensor and setpoint
-        q = """
-        SELECT sensor_uuid, sp_uuid, {1}_sps.equip, {1}_sps.site
-        FROM {1}_sensors
-        LEFT JOIN {1}_sps
-        ON {1}_sps.equip = {1}_sensors.equip
-        WHERE {1}_sensors.equip = "{0}";
-        """.format(equip, sensor)
+    for idxi, row in comb_metadata.iterrows():
+        # get data for sensor and setpoint
+        sensor_df = client.data_uris([row['sensor']], start=start, end=end, agg='mean', window="{}m".format(window))
+        setpoint_df = client.data_uris([row['sp']], start=start, end=end, agg='mean', window="{}m".format(window))
 
-        res = fetch_resp.query(q)
-        if len(res) == 0:
+        if not any([sensor_df.data.empty, setpoint_df.data.empty]):
+            df = _clean_df(sensor_df.data, setpoint_df.data)
+
+            if True:
+                zone_name = str(row['sensor']).split('#')[1]
+                csv_name = f"./zone_dat/{row['site']}-{zone_name}-{idxi}.csv"
+
+                with open(csv_name, 'w') as fout:
+                    fout.write(f"sensor: {row['sensor']}\n")
+                    fout.write(f"setpoint {row['sp']}\n\n")
+
+                    df.drop(columns=['sensor_id', 'setpoint_id']).to_csv(fout, index=False)
+                fout.close
+        else:
             continue
 
-        sensor_col = res[0][0]
-        setpoint_col = res[0][1]
+        # # for each equipment, pull the UUID for the sensor and setpoint
+        # q = """
+        # SELECT sensor_uuid, sp_uuid, {1}_sps.equip, {1}_sps.site
+        # FROM {1}_sensors
+        # LEFT JOIN {1}_sps
+        # ON {1}_sps.equip = {1}_sensors.equip
+        # WHERE {1}_sensors.equip = "{0}";
+        # """.format(equip, sensor)
 
-        if sensor_col is None or setpoint_col is None:
-            continue
+        # res = fetch_resp.query(q)
+        # if len(res) == 0:
+        #     continue
 
-        if sensor_col not in sensor_df:
-            print('no sensor', sensor_col)
-            continue
+        # sensor_col = res[0][0]
+        # setpoint_col = res[0][1]
 
-        if setpoint_col not in setpoint_df:
-            print('no sp', setpoint_col)
-            continue
+        # if sensor_col is None or setpoint_col is None:
+        #     continue
 
-        # create the dataframe for this pair of sensor and setpoint
-        df = pd.DataFrame([sensor_df[sensor_col], setpoint_df[setpoint_col]]).T
-        df.columns = ["{}_sensors".format(sensor), "{}_sps".format(sensor)]
+        # if sensor_col not in sensor_df:
+        #     print('no sensor', sensor_col)
+        #     continue
+
+        # if setpoint_col not in setpoint_df:
+        #     print('no sp', setpoint_col)
+        #     continue
+
+        # # create the dataframe for this pair of sensor and setpoint
+        # df = pd.DataFrame([sensor_df[sensor_col], setpoint_df[setpoint_col]]).T
+        # df.columns = ["{}_sensors".format(sensor), "{}_sps".format(sensor)]
 
         if th_type in ['under', 'u', '-', 'neg', '<']: # if measurement is under sp by th_diff
-            bad = (df["{}_sensors".format(sensor)]) < (df["{}_sps".format(sensor)] - th_diff)
+            bad = (df["sensor_val"]) < (df["setpoint_val"] - th_diff)
             str_th_type = 'Undershooting'
 
         elif th_type in ['over', 'o', '+', 'pos', '>']: # if measurement is over sp by th_diff
-            bad = (df["{}_sensors".format(sensor)]) > (df["{}_sps".format(sensor)] + th_diff)
+            bad = (df["sensor_val"]) > (df["setpoint_val"] + th_diff)
             str_th_type = 'Overshooting'
 
         elif th_type in ['outbound', 'outbounds', 'ob', '><']: # if measurement is either below min sp or above max sp by th_diff
-            max_sp = df["{}_sps".format(sensor)].max()
-            min_sp = df["{}_sps".format(sensor)].min()
+            max_sp = df["setpoint_val"].max()
+            min_sp = df["setpoint_val"].min()
 
-            bad_max = (df["{}_sensors".format(sensor)]) > (max_sp + th_diff)
-            bad_min = (df["{}_sensors".format(sensor)]) < (min_sp - th_diff)
+            bad_max = (df["sensor_val"]) > (max_sp + th_diff)
+            bad_min = (df["sensor_val"]) < (min_sp - th_diff)
 
             bad = pd.DataFrame([bad_min, bad_max]).all()
             str_th_type = 'Exceedance_of_min-max'
 
         elif th_type in ['bounded', 'inbounds','inbound', 'ib', '<>']: # if measurement is either within min and max sp by th_diff
-            max_sp = df["{}_sps".format(sensor)].max()
-            min_sp = df["{}_sps".format(sensor)].min()
+            max_sp = df["setpoint_val"].max()
+            min_sp = df["setpoint_val"].min()
 
-            bad_max = (df["{}_sensors".format(sensor)]) < (max_sp - th_diff)
-            bad_min = (df["{}_sensors".format(sensor)]) > (min_sp + th_diff)
+            bad_max = (df["sensor_val"]) < (max_sp - th_diff)
+            bad_min = (df["sensor_val"]) > (min_sp + th_diff)
 
             bad = pd.DataFrame([bad_min, bad_max]).all()
             str_th_type = 'Within_min-max'
 
         else:
-            bad = abs(df["{}_sensors".format(sensor)] - df["{}_sps".format(sensor)]) > th_diff
+            bad = abs(df["sensor_val"] - df["setpoint_val"]) > th_diff
             str_th_type = 'Not_within_setpoint'
 
         if len(df[bad]) == 0: continue
@@ -277,14 +339,14 @@ def _analyze(query, fetch_resp, th_type='abs', th_diff=0.25, th_time=15, window=
             data = df[idx[0]:idx[-1]]
             if len(data) >= (60/th_time): # multiply by window frame to get hours
                 fmt = {
-                    'site': res[0][3],
-                    'equipment': equip,
+                    'site': row['site'],
+                    'equipment': row['equip'],
                     'hours': len(data) / (60/window),
                     'start': idx[0],
                     'end': idx[-1],
-                    'sensor_val': (data["{}_sps".format(sensor)]).mean(),
-                    'setpoint_val': (data["{}_sensors".format(sensor)]).mean(),
-                    'diff': (data["{}_sps".format(sensor)] - data["{}_sensors".format(sensor)]).mean(),
+                    'sensor_val': (data["setpoint_val"]).mean(),
+                    'setpoint_val': (data["sensor_val"]).mean(),
+                    'diff': (data["setpoint_val"] - data["sensor_val"]).mean(),
                 }
                 records.append(fmt)
                 print("{str_th_type} {sensor} for {hours} hours From {start} to {end}, avg diff {diff:.2f}".format(**fmt,
@@ -343,23 +405,23 @@ def evaluate_sensors(sensor, eval_start_time, eval_end_time, th_type, th_diff, t
     qualify_resp, query = _query_and_qualify(sensor)
 
     # find sites with these sensors and setpoints or else exit
-    if qualify_resp.error != "":
-        print("ERROR: ", qualify_resp.error)
-        os.exit(1)
+    # if qualify_resp.error != "":
+    #     print("ERROR: ", qualify_resp.error)
+    #     os.exit(1)
 
     # build the request to fetch data for qualified sites
     fetch_resp = _fetch(qualify_resp, query, eval_start_time, eval_end_time, window)
 
     # analyze and print out measurements/sensors that are not meeting its setpoints
-    _analyze(query, fetch_resp, th_type, th_diff, th_time, window)
+    _analyze(query, fetch_resp, th_type, th_diff, th_time)
 
     print('##### App has finish evaluating sensors #####')
 
 if __name__ == '__main__':
     # define input values
     sensor      = "Zone_Air_Temperature"
-    eval_start_time  = "2018-03-01T00:00:00Z"
-    eval_end_time    = "2018-07-31T00:00:00Z"
+    eval_start_time  = None
+    eval_end_time    = None
     th_diff     = 2
     th_time     = 30
     th_type     = 'abs'
