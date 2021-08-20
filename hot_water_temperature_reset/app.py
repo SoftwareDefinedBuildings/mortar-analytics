@@ -3,14 +3,10 @@ import sys
 from os.path import join
 import pandas as pd
 
-# BACnet libraries
-# sys.path.append("/etc/Github/brick-field_study/bacnet_explore/")
-# import BACpypes_applications as BACpypesAPP
+import bacnet_and_data.readWriteProperty as BACpypesAPP
 
-import readWriteProperty as BACpypesAPP
-
-BACnet_init_filename = 'BACnet_init_temp_reset.ini'
-BACpypesAPP.Init(BACnet_init_filename)
+BACnet_init_filename = './bacnet_and_data/BACnet_init_temp_reset.ini'
+access_bacnet = BACpypesAPP.Init(BACnet_init_filename)
 
 # define brick schema, extension, and building model
 schema_folder = join("./", "schema_and_models")

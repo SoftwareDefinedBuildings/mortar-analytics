@@ -289,6 +289,7 @@ class WritePropertyThread(Thread):
 
 def Init(ini_filename):
     global this_application
+    bacnet_establish = False
 
     ### read initialization file
     opts = configparser.ConfigParser()
@@ -322,11 +323,18 @@ def Init(ini_filename):
         if _debug: print("    - services_supported: %r", services_supported)
 
         # let the device object know
-        this_device.protocolServicesSupported = services_supported.value
+        # TODO: Currently getting a *** bacpypes.errors.ExecutionError: ('property', 'writeAccessDenied')
+        # TODO: Fix the error. Currently does not affect functionality
+        # this_device.protocolServicesSupported = services_supported.value
         if _debug: print("after services")
 
     except Exception as error:
+        import pdb; pdb.set_trace()
         if _debug: print("exception: %r", error)
+    else:
+        bacnet_establish = True
+
+    return bacnet_establish
 
 
 def read_prop(args):
@@ -368,12 +376,14 @@ def write_prop(args):
 
 if __name__ == "__main__":
     BACnet_init_filename = 'BACnet_init_temp_reset.ini'
-    Init(BACnet_init_filename)
+    access_bacnet = Init(BACnet_init_filename)
 
     addr = ''
     obj_type = 'analogValue'
-    obj_inst = 3000369
+    obj_inst = 0
     prop_id = 'presentValue'
+
+    import pdb; pdb.set_trace()
 
     # test read method
     read_args = (addr, obj_type, obj_inst, prop_id)
