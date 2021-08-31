@@ -4712,11 +4712,11 @@ dbc:Field_Bus1.Plant_Boilers.HWS-TEffSetpnt a brick:Supply_Hot_Water_Temperature
     brick:bacnetPoint dbc:id-3002895 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.Plant_Boilers.HWST-SPInput_Range_High a brick:Hot_Water_Supply_Temperature_High_Reset_Setpoint ;
+dbc:Field_Bus1.Plant_Boilers.HWST-SPInput_Range_High a brick:High_Setpoint_Limit ;
     brick:bacnetPoint dbc:id-3002891 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.Plant_Boilers.HWST-SPInput_Range_Low a brick:Hot_Water_Supply_Temperature_Low_Reset_Setpoint ;
+dbc:Field_Bus1.Plant_Boilers.HWST-SPInput_Range_Low a brick:Low_Setpoint_Limit ;
     brick:bacnetPoint dbc:id-3002890 ;
     brick:hasUnit unit:DEG_F .
 
