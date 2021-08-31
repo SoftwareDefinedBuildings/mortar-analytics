@@ -12,10 +12,10 @@ class SaveBacnetPoints(object):
     the BACnet network.
     """
 
-    def __init__(self, bacnet_df, bacpypesAPP, reading_rate=5*60, saving_rate=900, archive_length=36*3600,
+    def __init__(self, bacnet_info, bacpypesAPP, reading_rate=5*60, saving_rate=900, archive_length=36*3600,
                 timezone=None, prj_folder="./", data_folder="DATA", data_file="data_measurements"):
 
-        self.bacnet_df      = bacnet_df
+        self.bacnet_info    = bacnet_info
         self.bacpypesAPP    = bacpypesAPP
         self.reading_rate   = reading_rate
         self.saving_rate    = saving_rate
@@ -49,14 +49,13 @@ class SaveBacnetPoints(object):
         # check if sensor records file exist
         if os.path.exists(self.data_file):
             sensor_records = self.read_json(self.data_file)
-            import pdb; pdb.set_trace()
         else:
 
             sensor_records = {}
 
-            for ids, row in self.bacnet_df.iterrows():
+            for ids, row in self.bacnet_info.iterrows():
                 sensor_id = int(row["bacnet_instance"])
-                sensor_name = str(row["valve"]).split("#")[-1]
+                sensor_name = str(row["point_name"]).split("#")[-1]
                 sensor_unit = str(row["unit"]).split("/")[-1]
 
                 sensor_records[sensor_id] = {
@@ -66,8 +65,8 @@ class SaveBacnetPoints(object):
                 }
 
             # save sensor records
-            self.save_json(self.data_file, self.sensor_records)
-        
+            self.save_json(self.data_file, sensor_records)
+
         # save sensor records in class
         self.sensor_records = sensor_records
 
@@ -167,7 +166,7 @@ class SaveBacnetPoints(object):
 
         current_readings = []
 
-        for ids, row in self.bacnet_df.iterrows():
+        for ids, row in self.bacnet_info.iterrows():
             obj_type = row['bacnet_type']
             obj_inst = row['bacnet_instance']
             bacnet_addr = row['bacnet_addr']

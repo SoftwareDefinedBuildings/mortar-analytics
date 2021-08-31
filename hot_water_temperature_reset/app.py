@@ -1,10 +1,17 @@
 import brickschema
 import sys
+import time
 from os.path import join
 import pandas as pd
 
 import bacnet_and_data.readWriteProperty as BACpypesAPP
+from bacnet_and_data.ControlledBoiler import ControlledBoiler as Boiler
 
+# debugging setting
+_debug = 1
+
+
+if _debug: print("\nSetting up communication with BACnet network.\n")
 BACnet_init_filename = './bacnet_and_data/BACnet_init_temp_reset.ini'
 access_bacnet = BACpypesAPP.Init(BACnet_init_filename)
 
@@ -18,23 +25,36 @@ brick_extensions = [
     join(schema_folder, "bacnet_extension.ttl")
     ]
 
+
 def return_equipment_points(brick_point_class, brick_equipment_class):
     """
     Return defined brick point class for piece of equipment
     """
     # query to return all setpoints of equipment
-    term_query = f"""SELECT DISTINCT ?bacnet_id ?t_unit ?t_unit_point ?point_type  WHERE {{
+    term_query = f"""SELECT DISTINCT * WHERE {{
         ?t_unit         brick:hasPoint              ?t_unit_point .
         ?t_unit_point   rdf:type/rdfs:subClassOf*   brick:{brick_point_class} .
-        ?t_unit_point   brick:bacnetPoint           ?bacnet_id .
         ?t_unit_point   rdf:type                    ?point_type .
+
+        ?t_unit_point   brick:bacnetPoint               ?bacnet_id .
+        ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
+        ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
+        ?bacnet_id      brick:accessedAt                ?bacnet_net .
+        ?bacnet_net     dbc:connstring                  ?bacnet_addr .
+
+        FILTER NOT EXISTS {{ 
+            ?subtype ^a ?t_unit_point ;
+                (rdfs:subClassOf|^owl:equivalentClass)* ?point_type .
+            filter ( ?subtype != ?point_type )
+            }}
         }}"""
 
     # execute the query
+    if _debug: print(f"Retrieving {brick_point_class} BACnet information for {brick_equipment_class}\n")
     term_query_result = g.query(term_query, initBindings={"t_unit": brick_equipment_class})
 
     df_term_query_result = pd.DataFrame(term_query_result, columns=[str(s) for s in term_query_result.vars])
-    df_term_query_result["short_point_type"] = [shpt.split("#")[1] for shpt in df_term_query_result["point_type"]]
+    df_term_query_result.loc[:, "short_point_type"] = [shpt.split("#")[1] for shpt in df_term_query_result["point_type"]]
     df_unique_stpt_class = df_term_query_result.drop_duplicates(subset=["t_unit_point", "point_type"])
 
     return df_unique_stpt_class
@@ -116,7 +136,7 @@ def return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name):
         "Water_Temperature_Setpoint"
         ]
 
-    brick_point_class = f"Temperature_Setpoint"
+    brick_point_class = "Temperature_Setpoint"
     brick_equipment_class = zn_t_unit_name
 
     df_term_query_result = return_equipment_points(brick_point_class, brick_equipment_class)
@@ -164,108 +184,157 @@ def print_bacnet_point(bacnet_point, inside_bacnet=False, read_attr='presentValu
         value_read = bacnet_read(bacnet_point, read_attr=read_attr)
         print(f"Reading {point_name} ({class_name}) = {value_read}")
 
-
-
-# load schema files
-g = brickschema.Graph()
-
-if False:
-    g.load_file(brick_schema_file)
-    [g.load_file(fext) for fext in brick_extensions]
-    g.load_file(bldg_brick_model)
-
-    # expand Brick graph
-    print(f"Starting graph has {len(g)} triples")
-
-    g.expand(profile="owlrl")
-
-    print(f"Inferred graph has {len(g)} triples")
-
-    # serialize inferred Brick to output
-    with open("dbc_brick_expanded.ttl", "wb") as fp:
-        fp.write(g.serialize(format="turtle").rstrip())
-        fp.write(b"\n")
-else:
-    expanded_brick_model = "dbc_brick_expanded.ttl"
-    g.load_file(expanded_brick_model)
-
-# import pdb; pdb.set_trace()
-
-# # validate Brick graph
-# valid, _, resultsText = g.validate()
-# if not valid:
-#     print("Graph is not valid!")
-#     print(resultsText)
-
-#     with open("debug-validation_results.txt", "w") as f:
-#         f.write(resultsText)
-# else:
-#     print("VALID GRAPH!!")
-
-
-# query direct and indirect hot water consumers
-hw_direct_consumers = """SELECT * WHERE {
-  ?boiler     rdf:type/rdfs:subClassOf?   brick:Boiler .
-  ?boiler     brick:feeds                 ?t_unit .
-  ?t_unit     rdf:type                    ?equip_type .
-  ?t_unit     brick:feeds                 ?room_space .
-  ?room_space rdf:type/rdfs:subClassOf?   ?HVAC_Zone .
-}
-"""
-
-hw_indirect_consumers = """ SELECT * WHERE {
+def _query_hw_consumers(g):
+    """
+    Retrieve hot water consumers in the building, their respective
+    boiler(s), and relevant hvac zones.
+    """
+    # query direct and indirect hot water consumers
+    hw_consumers_query = """SELECT DISTINCT * WHERE {
     ?boiler     rdf:type/rdfs:subClassOf?   brick:Boiler .
-    ?boiler     brick:feeds                 ?equip .
-    ?equip      brick:feeds                 ?t_unit .
-    ?t_unit     rdf:type/rdfs:subClassOf?   brick:Terminal_Unit .
+    ?boiler     brick:feeds+                ?t_unit .
     ?t_unit     rdf:type                    ?equip_type .
-    ?t_unit     brick:feeds                 ?room_space .
-    ?room_space rdf:type/rdfs:subClassOf?   ?HVAC_Zone .
-}"""
+    ?mid_equip  brick:feeds                 ?t_unit .
+    ?t_unit     brick:feeds+                ?room_space .
+    ?room_space rdf:type/rdfs:subClassOf?   brick:HVAC_Zone .
 
-hw_consumers = [hw_direct_consumers, hw_indirect_consumers]
+        FILTER NOT EXISTS { 
+            ?subtype ^a ?t_unit ;
+                (rdfs:subClassOf|^owl:equivalentClass)* ?equip_type .
+            filter ( ?subtype != ?equip_type )
+            }
+    }
+    """
+    if _debug: print("Retrieving hot water consumers for each boiler.\n")
 
-df_container = []
-for consumer in hw_consumers:
-    q_result = g.query(consumer)
-    df_container.append(pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars]))
+    q_result = g.query(hw_consumers_query)
+    df_hw_consumers = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
 
-df_hw_consumers = pd.concat(df_container, ignore_index=True, sort=False)
-df_unique_hw_consumers = df_hw_consumers.drop_duplicates(subset=["t_unit"])
+    #df_unique_hw_consumers = df_hw_consumers.drop_duplicates(subset=["t_unit"])
 
-read_bacnet = True
-
-# read boiler equipement supply and setpoint temperatures
-for boiler in df_hw_consumers['boiler'].unique():
-    boiler_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(boiler)
-    boiler_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', boiler)
-
-    print_bacnet_point(boiler_ctrl_temp_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
-    print_bacnet_point(boiler_stpt_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
+    return df_hw_consumers
 
 
-# iterate through each equipment setpoints and zone temperatures
-for i, equip_row in df_unique_hw_consumers.iterrows():
-    zn_t_unit_name = equip_row["t_unit"]
-    zn_t_unit_type = equip_row["equip_type"]
-    print(f"\n{zn_t_unit_name}")
+def _clean_metadata(df_hw_consumers):
+    """
+    Cleans metadata dataframe to have unique hot water consumers with
+    most specific classes associated to other relevant information.
+    """
 
-    hvac_mode = "Heating"
+    unique_t_units = df_hw_consumers.loc[:, "t_unit"].unique()
+    direct_consumers_bool = df_hw_consumers.loc[:, 'mid_equip'] == df_hw_consumers.loc[:, 'boiler']
 
-    equip_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zn_t_unit_name)
-    equip_stpt_bacnet_point = return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name)
+    direct_consumers = df_hw_consumers.loc[direct_consumers_bool, :]
+    indirect_consumers = df_hw_consumers.loc[~direct_consumers_bool, :]
 
-    print_bacnet_point(equip_ctrl_temp_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
-    print_bacnet_point(equip_stpt_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
+    # remove any direct hot consumers listed in indirect consumers
+    for unit in direct_consumers.loc[:, "t_unit"].unique():
+        indir_test = indirect_consumers.loc[:, "t_unit"] == unit
+
+        # update indirect consumers df
+        indirect_consumers = indirect_consumers.loc[~indir_test, :]
+
+    # label type of hot water consumer
+    direct_consumers.loc[:, "consumer_type"] = "direct"
+    indirect_consumers.loc[:, "consumer_type"] = "indirect"
+
+    hw_consumers = pd.concat([direct_consumers, indirect_consumers])
+    hw_consumers = hw_consumers.drop(columns=["subtype"]).reset_index(drop=True)
+
+    return hw_consumers
 
 
-# iterate through each zone setpoints and zone temperature
-for zone in df_hw_consumers['room_space'].unique():
-    zone_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zone)
-    zone_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', zone)
 
-    print_bacnet_point(zone_ctrl_temp_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
-    print_bacnet_point(zone_stpt_bacnet_point, inside_bacnet=read_bacnet, read_attr='presentValue')
+if __name__ == "__main__":
+
+    # load schema files
+    g = brickschema.Graph()
+
+    if False:
+        if _debug: print("Loading in building's Brick model.\n")
+        g.load_file(brick_schema_file)
+        [g.load_file(fext) for fext in brick_extensions]
+        g.load_file(bldg_brick_model)
+
+        # expand Brick graph
+        if _debug: print("Expanding and inferring Brick graph.")
+        print(f"Starting graph has {len(g)} triples")
+
+        g.expand(profile="owlrl")
+
+        print(f"Inferred graph has {len(g)} triples")
+
+        # serialize inferred Brick to output
+        with open("dbc_brick_expanded.ttl", "wb") as fp:
+            fp.write(g.serialize(format="turtle").rstrip())
+            fp.write(b"\n")
+    else:
+        if _debug: print("Loading existing, pre-expanded building Brick model.\n")
+        expanded_brick_model = "dbc_brick_expanded.ttl"
+        g.load_file(expanded_brick_model)
+
+    if False:
+        # validate Brick graph
+        valid, _, resultsText = g.validate()
+        if not valid:
+            print("Graph is not valid!")
+            print(resultsText)
+
+            with open("debug-validation_results.txt", "w") as f:
+                f.write(resultsText)
+        else:
+            print("VALID GRAPH!!")
+
+
+    # query hot water consumers and clean metadata
+    df_hw_consumers = _query_hw_consumers(g)
+    df_hw_consumers = _clean_metadata(df_hw_consumers)
+
+    # Define boilers to be controlled
+    boilers2control = []
+    for boiler in df_hw_consumers['boiler'].unique():
+        boiler_consumers = df_hw_consumers.loc[:, "boiler"].isin([boiler])
+        hw_consumers = df_hw_consumers.loc[boiler_consumers, :]
+        boilers2control.append(Boiler(boiler, hw_consumers, g, BACpypesAPP))
+        import pdb; pdb.set_trace()
+
+
+    # while True:
+    #     bacnet_rad_valves.archive_sensor_values()
+    #     time.sleep(bacnet_rad_valves.reading_rate)
+
+
+    # # read boiler equipement supply and setpoint temperatures
+    # for boiler in df_hw_consumers['boiler'].unique():
+    #     boiler_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(boiler)
+    #     boiler_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', boiler)
+
+    #     print_bacnet_point(boiler_ctrl_temp_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
+    #     print_bacnet_point(boiler_stpt_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
+
+
+    # # iterate through each equipment setpoints and zone temperatures
+    # for i, equip_row in df_hw_consumers.iterrows():
+    #     zn_t_unit_name = equip_row["t_unit"]
+    #     zn_t_unit_type = equip_row["equip_type"]
+    #     print(f"\n{zn_t_unit_name}")
+
+    #     hvac_mode = "Heating"
+
+    #     equip_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zn_t_unit_name)
+    #     equip_stpt_bacnet_point = return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name)
+
+    #     print_bacnet_point(equip_ctrl_temp_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
+    #     print_bacnet_point(equip_stpt_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
+
+
+    # # iterate through each zone setpoints and zone temperature
+    # for zone in df_hw_consumers['room_space'].unique():
+    #     zone_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zone)
+    #     zone_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', zone)
+
+    #     print_bacnet_point(zone_ctrl_temp_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
+    #     print_bacnet_point(zone_stpt_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
 
 
 
