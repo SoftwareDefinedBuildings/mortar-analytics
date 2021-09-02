@@ -12,7 +12,7 @@ class SaveBacnetPoints(object):
     the BACnet network.
     """
 
-    def __init__(self, bacnet_info, bacpypesAPP, reading_rate=5*60, saving_rate=900, archive_length=36*3600,
+    def __init__(self, bacnet_info, bacpypesAPP, reading_rate=5*60, saving_rate=15*60, archive_length=36*3600,
                 timezone=None, prj_folder="./", data_folder="DATA", data_file="data_measurements"):
 
         self.bacnet_info    = bacnet_info
@@ -93,7 +93,7 @@ class SaveBacnetPoints(object):
 
     def read_json(self, path):
         """
-        Read measurement data contained in json format/
+        Read measurement data contained in json format
         """
 
         with open(path, "r") as f:
@@ -143,9 +143,9 @@ class SaveBacnetPoints(object):
 
         if isinstance(sensor_value, str):
             if sensor_value.lower() in ['active', 'on']:
-                sensor_value = 1
+                sensor_value = 1.0
             elif sensor_value.lower() in ['inactive', 'off']:
-                sensor_value = 0
+                sensor_value = 0.0
 
         return sensor_value
 

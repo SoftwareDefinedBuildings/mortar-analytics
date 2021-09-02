@@ -296,21 +296,14 @@ if __name__ == "__main__":
         boiler_consumers = df_hw_consumers.loc[:, "boiler"].isin([boiler])
         hw_consumers = df_hw_consumers.loc[boiler_consumers, :]
         boilers2control.append(Boiler(boiler, hw_consumers, g, BACpypesAPP))
-        import pdb; pdb.set_trace()
+
+    boilers2control[0].run_test()
+    import pdb; pdb.set_trace()
 
 
     # while True:
     #     bacnet_rad_valves.archive_sensor_values()
     #     time.sleep(bacnet_rad_valves.reading_rate)
-
-
-    # # read boiler equipement supply and setpoint temperatures
-    # for boiler in df_hw_consumers['boiler'].unique():
-    #     boiler_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(boiler)
-    #     boiler_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', boiler)
-
-    #     print_bacnet_point(boiler_ctrl_temp_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
-    #     print_bacnet_point(boiler_stpt_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
 
 
     # # iterate through each equipment setpoints and zone temperatures
