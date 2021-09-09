@@ -123,7 +123,6 @@ class ControlledBoiler(object):
         """
         Archive high thermal mass control valve data
         """
-
         while True:
             self.htm.archive_sensor_values()
             time.sleep(self.htm.reading_rate)
@@ -188,8 +187,8 @@ class ControlledBoiler(object):
 
         fr_req_count = self.get_fr_requests()
 
-        htm_req_count = self.get_htm_request()
-
+        # htm_req_count = self.get_htm_request()
+        # htm_req_count = 0
         req_count = fr_req_count + htm_req_count
 
         # save to file
