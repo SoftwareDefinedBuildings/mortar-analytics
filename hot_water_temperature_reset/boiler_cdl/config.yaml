@@ -1,0 +1,4 @@
+fmu_file: Buildings_Controls_OBC_ASHRAE_PrimarySystem_BoilerPlant_SetPoints_HotWaterSupplyTemperatureReset.fmu
+model_update_rate: 300
+web_api_port: 5000
+
