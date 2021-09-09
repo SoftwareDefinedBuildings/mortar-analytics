@@ -14,7 +14,7 @@ class ControlledBoiler(object):
     """
 
     # debugging setting
-    _debug = 1
+    _debug = 0
 
     def __init__(self, boiler_name, hw_consumers, brick_model, bacpypesAPP):
 
@@ -23,6 +23,7 @@ class ControlledBoiler(object):
         self.brick_model    = brick_model
         self.bacpypesAPP    = bacpypesAPP
         self.htm            = None
+        self.htm_archive_loop = True
         self.htm_terminals  = [
             "TABS_Panel", "ESS_Panel",
             "Thermally_Activated_Building_System_Panel",
@@ -123,10 +124,13 @@ class ControlledBoiler(object):
         """
         Archive high thermal mass control valve data
         """
-        while True:
+        while self.htm_archive_loop:
             self.htm.archive_sensor_values()
             time.sleep(self.htm.reading_rate)
 
+
+    def stop_htm_data_archive(self):
+        self.htm_archive_loop = False
 
     def clean_hw_consumers(self):
         """
@@ -187,22 +191,22 @@ class ControlledBoiler(object):
 
         fr_req_count = self.get_fr_requests()
 
-        # htm_req_count = self.get_htm_request()
-        # htm_req_count = 0
-        req_count = fr_req_count + htm_req_count
+        htm_req_count = self.get_htm_request()
+
+        req_count = fr_req_count
 
         # save to file
         with open('./DATA/number_of_request.csv', mode='a') as f:
             f.write(f"{fr_req_count},{htm_req_count},{req_count},{pd.Timestamp.now()}\n")
         f.close()
 
-        #return req_count
+        return req_count
 
     def test_num_request(self):
 
         try:
             while True:
-                self.get_num_requests()
+                req_count = self.get_num_requests()
                 time.sleep(30)
         except KeyboardInterrupt:
             print("\nKeyboardInterrupt has been caught.")
