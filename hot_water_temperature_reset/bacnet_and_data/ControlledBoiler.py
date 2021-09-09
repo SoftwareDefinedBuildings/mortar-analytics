@@ -202,6 +202,12 @@ class ControlledBoiler(object):
 
         return req_count
 
+
+    def write_new_boiler_setpoint(self, new_value, priority=13):
+
+        self.write_point_value(self.boiler_points["Supply_Water_Temperature_Setpoint"], new_value, priority)
+
+
     def test_num_request(self):
 
         try:
@@ -329,6 +335,22 @@ class ControlledBoiler(object):
             val = self.convert_to_int(val)
 
         return val
+
+
+    def write_point_value(self, bacnet_info, new_value, priority=13):
+        """
+        Write new value to bacnet point
+        """
+
+        write_attr = "presentValue"
+
+        obj_type = bacnet_info['bacnet_type']
+        obj_inst = bacnet_info['bacnet_instance']
+        bacnet_addr = bacnet_info['bacnet_addr']
+
+        bacnet_args = [bacnet_addr, obj_type, obj_inst, write_attr, str(new_value), '-', priority]
+
+        self.bacpypesAPP.write_prop(bacnet_args)
 
 
     def _query_htm_valves(self, htm_terminal):

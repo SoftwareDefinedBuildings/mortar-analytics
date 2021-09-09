@@ -192,7 +192,18 @@ class Boiler_Controller:
 
 
     def send_new_setpoint_to_boiler(self, new_boiler_setpoint):
-        pass
+        degF_boiler_setpoint = self.convert_K_to_degF(new_boiler_setpoint)
+
+        # check that new boiler setpoint is within limits
+        boiler_max_sp = self.bldg_boilers[0].get_max_temp_setpoint()
+        boiler_min_sp = self.bldg_boilers[0].get_min_temp_setpoint()
+
+        if degF_boiler_setpoint > boiler_max_sp:
+            degF_boiler_setpoint = boiler_max_sp
+        elif degF_boiler_setpoint < boiler_min_sp:
+            degF_boiler_setpoint = boiler_min_sp
+
+        self.bldg_boilers[0].write_new_boiler_setpoint(degF_boiler_setpoint)
 
 
     def schedule_tasks(self):
