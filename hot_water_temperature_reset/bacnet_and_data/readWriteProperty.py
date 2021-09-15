@@ -1,6 +1,6 @@
 import sys, time
 import configparser
-from threading import Thread
+from threading import Thread, Lock
 
 from bacpypes.debugging import bacpypes_debugging, ModuleLogger
 from bacpypes.consolelogging import ConfigArgumentParser
@@ -245,7 +245,7 @@ class WritePropertyThread(Thread):
         return args
 
     def run(self):
-        global valueRead
+        # global valueRead
         valueRead = None
 
         args = self.get_args()
@@ -286,6 +286,9 @@ class WritePropertyThread(Thread):
 #
 #   __main__
 #
+
+lock_read = Lock()
+lock_write = Lock()
 
 def Init(ini_filename):
     global this_application
@@ -338,40 +341,43 @@ def Init(ini_filename):
 
 
 def read_prop(args):
-    # create a thread supervisor
-    read_property_thread = ReadPropertyThread()
+    with lock_read:
+        # create a thread supervisor
+        read_property_thread = ReadPropertyThread()
 
-    # input BACnet request arguments
-    read_property_thread.take_args(args)
+        # input BACnet request arguments
+        read_property_thread.take_args(args)
 
-    # start it running when the core is running
-    deferred(read_property_thread.start)
+        # start it running when the core is running
+        deferred(read_property_thread.start)
 
-    if _debug: print("running")
+        if _debug: print("running")
 
-    run()
+        run()
 
-    if _debug: print("fini")
+        if _debug: print("fini")
+
     return valueRead
 
 
 def write_prop(args):
-    # create a thread supervisor
-    write_property_thread = WritePropertyThread()
+    with lock_write:
+        # create a thread supervisor
+        write_property_thread = WritePropertyThread()
 
-    # input BACnet request arguments
-    write_property_thread.take_args(args)
+        # input BACnet request arguments
+        write_property_thread.take_args(args)
 
-    # start it running when the core is running
-    deferred(write_property_thread.start)
+        # start it running when the core is running
+        deferred(write_property_thread.start)
 
-    if _debug: print("running")
+        if _debug: print("running")
 
-    run()
+        run()
 
-    if _debug: print("fini")
+        if _debug: print("fini")
 
-    time.sleep(2)
+        time.sleep(2)
 
 
 if __name__ == "__main__":
@@ -382,8 +388,6 @@ if __name__ == "__main__":
     obj_type = 'analogValue'
     obj_inst = 0
     prop_id = 'presentValue'
-
-    import pdb; pdb.set_trace()
 
     # test read method
     read_args = (addr, obj_type, obj_inst, prop_id)

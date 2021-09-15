@@ -6,3 +6,6 @@ pandas
 numpy
 matplotlib
 scipy
+spicy
+lxml
+Cython
