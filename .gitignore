@@ -6,3 +6,4 @@
 .DS_Store
 venv/
 __pycache__/
+.Rproj.user
