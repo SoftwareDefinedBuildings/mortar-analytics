@@ -60,7 +60,6 @@ class Boiler_Controller:
     def initialize_boiler_cdl(self):
         boiler_inputs = self.get_current_state()
 
-
         # boiler_inputs_SI_units = self.convert_units(boiler_inputs)
 
         ## TODO: Set once
@@ -69,9 +68,9 @@ class Boiler_Controller:
         self.boiler.set('nBoi', 2)
 
         self.boiler.set('nHotWatResReqIgn', 2) # number of requests to be ignored
-        self.boiler.set('TPlaHotWatSetMax', 353.15) ## also initial temperature setpoint for the trim and respond sequence
-        self.boiler.set('TConBoiHotWatSetMax', 353.15)
-        self.boiler.set('THotWatSetMinConBoi', 305.37)
+        self.boiler.set('TPlaHotWatSetMax', self.convert_degF_to_K(130)) ## also initial temperature setpoint for the trim and respond sequence
+        self.boiler.set('TConBoiHotWatSetMax', self.convert_degF_to_K(130))
+        self.boiler.set('THotWatSetMinConBoi', self.convert_degF_to_K(90))
 
         # uStaCha, uHotWatPumSta[nPum], nHotWatSupResReq, uTyp[nSta], uCurStaSet
         # op: TPlaHotWatSupSet
