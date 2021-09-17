@@ -2949,7 +2949,7 @@ dbc:Field_Bus1.BrowerRadiant2East.SLAB3-T a brick:Embedded_Temperature_Sensor ;
     brick:bacnetPoint dbc:id-3001083 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant2East.ZN1-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant2East.ZN1-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001086 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3012,7 +3012,7 @@ dbc:Field_Bus1.BrowerRadiant2East.ZN2-6_HEAT_UNOCC_SP a brick:Unoccupied_Heating
     brick:bacnetPoint dbc:id-3001994 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant2East.ZN2-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant2East.ZN2-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001025 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3021,7 +3021,7 @@ dbc:Field_Bus1.BrowerRadiant2East.ZN2-T a brick:Zone_Air_Temperature_Sensor ;
     brick:hasLocation dbc:Suite_270 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant2East.ZN3-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant2East.ZN3-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001024 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3180,7 +3180,7 @@ dbc:Field_Bus1.BrowerRadiant2West.SLAB2-4-T a brick:Embedded_Temperature_Sensor 
     brick:bacnetPoint dbc:id-3002247 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant2West.ZN2-3-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant2West.ZN2-3-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3002244 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3225,7 +3225,7 @@ dbc:Field_Bus1.BrowerRadiant2West.ZN2-3_HTGUNOCC-SP a brick:Unoccupied_Heating_T
     brick:bacnetPoint dbc:id-3002260 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant2West.ZN2-4-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant2West.ZN2-4-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3002243 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3325,7 +3325,7 @@ dbc:Field_Bus1.BrowerRadiant3East.SLAB3-T a brick:Embedded_Temperature_Sensor ;
     brick:bacnetPoint dbc:id-3001126 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant3East.ZN1-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant3East.ZN1-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001122 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3334,7 +3334,7 @@ dbc:Field_Bus1.BrowerRadiant3East.ZN1-T a brick:Zone_Air_Temperature_Sensor ;
     brick:hasLocation dbc:Suite_320 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant3East.ZN2-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant3East.ZN2-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001045 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3396,7 +3396,7 @@ dbc:Field_Bus1.BrowerRadiant3East.ZN3-6_HEAT_UNOCC_SP a brick:Unoccupied_Heating
     brick:bacnetPoint dbc:id-3002017 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant3East.ZN3-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant3East.ZN3-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001044 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3536,7 +3536,7 @@ dbc:Field_Bus1.BrowerRadiant3West.SLAB2-T a brick:Embedded_Temperature_Sensor ;
     brick:bacnetPoint dbc:id-3001175 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant3West.ZN1-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant3West.ZN1-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001172 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3545,7 +3545,7 @@ dbc:Field_Bus1.BrowerRadiant3West.ZN1-T a brick:Zone_Air_Temperature_Sensor ;
     brick:hasLocation dbc:Suite_300 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant3West.ZN2-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant3West.ZN2-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001171 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3695,7 +3695,7 @@ dbc:Field_Bus1.BrowerRadiant4East.SLAB3-T a brick:Embedded_Temperature_Sensor ;
     brick:bacnetPoint dbc:id-3001147 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant4East.ZN1-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant4East.ZN1-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001143 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3704,7 +3704,7 @@ dbc:Field_Bus1.BrowerRadiant4East.ZN1-T a brick:Zone_Air_Temperature_Sensor ;
     brick:hasLocation dbc:Suite_440 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant4East.ZN2-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant4East.ZN2-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001006 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3713,7 +3713,7 @@ dbc:Field_Bus1.BrowerRadiant4East.ZN2-T a brick:Zone_Air_Temperature_Sensor ;
     brick:hasLocation dbc:Suite_460 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant4East.ZN3-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant4East.ZN3-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001005 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3910,7 +3910,7 @@ dbc:Field_Bus1.BrowerRadiant4West.SLAB2-T a brick:Embedded_Temperature_Sensor ;
     brick:bacnetPoint dbc:id-3001192 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant4West.ZN1-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant4West.ZN1-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001189 ;
     brick:hasUnit unit:DEG_F .
 
@@ -3919,7 +3919,7 @@ dbc:Field_Bus1.BrowerRadiant4West.ZN1-T a brick:Zone_Air_Temperature_Sensor ;
     brick:hasLocation dbc:Suite_400 ;
     brick:hasUnit unit:DEG_F .
 
-dbc:Field_Bus1.BrowerRadiant4West.ZN2-SP a brick:Zone_Air_Temperature_Setpoint ;
+dbc:Field_Bus1.BrowerRadiant4West.ZN2-SP a brick:Warm_Cool_Adjust_Sensor ;
     brick:bacnetPoint dbc:id-3001188 ;
     brick:hasUnit unit:DEG_F .
 
