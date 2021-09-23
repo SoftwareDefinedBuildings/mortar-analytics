@@ -2,6 +2,7 @@ import brickschema
 import pandas as pd
 import numpy as np
 from operator import itemgetter
+from os.path import join
 import sys
 sys.path.append("/mnt/c/Users/duar3/Documents/github/smap/python")
 sys.path.append("/mnt/c/Users/duar3/Documents/github/smap/python/smap")
@@ -10,7 +11,7 @@ from smap.archiver.client import SmapClient
 from smap.contrib import dtutil
 
 # create plots
-from bokeh.palettes import Spectral8
+from bokeh.palettes import Spectral8, Category20
 from bokeh.io import show, save, output_file
 from bokeh.layouts import column
 from bokeh.plotting import figure, show
@@ -127,13 +128,19 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
         # else:
         #     y_plot_range = Range1d(start=0, end=1.1)
 
+        # plot settings
+        plt_colors = Category20[20]
+
+        x_range_str_time = pd.to_datetime(start, unit='s', utc=True).tz_convert('US/Pacific').tz_localize(None)
+        x_range_end_time = pd.to_datetime(end, unit='s', utc=True).tz_convert('US/Pacific').tz_localize(None)
+
         if ii == 0:
-            x_plot_range = (pd.to_datetime(start, unit='s'), pd.to_datetime(end, unit='s'))
+            x_plot_range = (x_range_str_time, x_range_end_time)
         else:
             x_plot_range = plots[0].x_range
 
         p = figure(
-            plot_height=400, plot_width=1500,
+            plot_height=300, plot_width=1500,
             x_axis_type="datetime", x_axis_location="below",
             x_range=x_plot_range,
             # y_range=y_plot_range
@@ -145,19 +152,23 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
         df_subset = [data[x] for x in in_data_index]
 
         for i, dd in enumerate(df_subset):
-
             if exclude_str is not None:
                 if any([nm in metadata.loc[in_data_index[i], "point_name_x"] for nm in exclude_str]):
                     continue
             p.step(
-                pd.to_datetime(dd[:, 0], unit='ms'), dd[:, 1], legend_label=metadata.loc[in_data_index[i], "point_name_x"],
-                color = Spectral8[i % 8], line_width=2
+                pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None),
+                dd[:, 1], legend_label=metadata.loc[in_data_index[i], "point_name_x"],
+                color = plt_colors[i % len(plt_colors)], line_width=2
                 )
 
-        p.yaxis.axis_label = str(point_type)
+        y_axis_label = str(point_type).split("#")[1]
+        p.yaxis.axis_label = y_axis_label
         p.legend.click_policy = "hide"
-        p.legend.label_text_font_size = "6px"
-        p.legend.spacing = 1
+
+        p.legend.label_text_font_size = "9px"
+        p.legend.label_height = 5
+        p.legend.glyph_height = 5
+        p.legend.spacing = 5
 
         plots.append(p)
 
@@ -167,27 +178,38 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
     return plots
 
 
-def plot_boiler_temps(boiler_points_to_download, boiler_data):
+def plot_boiler_temps(boiler_points_to_download, boiler_data, filename):
+
+    # plot settings
+    plt_colors = Spectral8
+
+    x_range_str_time = pd.to_datetime(start, unit='s', utc=True).tz_convert('US/Pacific').tz_localize(None)
+    x_range_end_time = pd.to_datetime(end, unit='s', utc=True).tz_convert('US/Pacific').tz_localize(None)
+
     p = figure(
-            plot_height=400, plot_width=1500,
+            plot_height=300, plot_width=1500,
             x_axis_type="datetime", x_axis_location="below",
-            x_range=(pd.to_datetime(start, unit='s'), pd.to_datetime(end, unit='s')),
+            x_range=(x_range_str_time, x_range_end_time),
             y_range=Range1d(start=0, end=200)
             )
     p.add_layout(Legend(), 'right')
 
     for i, dd in enumerate(boiler_data):
         p.step(
-            pd.to_datetime(dd[:, 0], unit='ms'), dd[:, 1], legend_label=boiler_points_to_download.iloc[i]["point_name_x"],
-            color = Spectral8[i % 8], line_width=2
+            pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None),
+            dd[:, 1], legend_label=boiler_points_to_download.iloc[i]["point_name_x"],
+            color = plt_colors[i % len(plt_colors)], line_width=2
             )
 
     p.yaxis.axis_label = "Boiler temperatures"
     p.legend.click_policy = "hide"
-    p.legend.label_text_font_size = "10px"
-    p.legend.spacing = 1
 
-    output_file("boiler_temps.html")
+    p.legend.label_text_font_size = "9px"
+    p.legend.label_height = 5
+    p.legend.glyph_height = 5
+    p.legend.spacing = 5
+
+    output_file(filename)
     save(p)
 
     return p
@@ -213,9 +235,11 @@ if __name__ == "__main__":
     keyStr = "B7qm4nnyPVZXbSfXo14sBZ5laV7YY5vjO19G"
     where = "Metadata/SourceName = 'Field Study 4'"
 
+    plot_folder = "./figures"
+
     # time interval for to download data
-    start = dtutil.dt2ts(dtutil.strptime_tz("9-9-2021", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("9-17-2021", "%m-%d-%Y"))
+    start = dtutil.dt2ts(dtutil.strptime_tz("9-13-2021", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("9-24-2021", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
@@ -250,7 +274,8 @@ if __name__ == "__main__":
 
 
     # create plot
-    ctrl_plots = plot_multiple_entities(ctrl_points_to_download, hw_ctrl_data, start, end, "hw_consumer_ctrl.html", exclude_str=["REV", "DPR", "D-O"])
+    fig_file = join(plot_folder, "hw_consumer_ctrl.html")
+    ctrl_plots = plot_multiple_entities(ctrl_points_to_download, hw_ctrl_data, start, end, fig_file, exclude_str=["REV", "DPR", "D-O"])
 
     #############################
     ##### Return boiler points
@@ -271,7 +296,8 @@ if __name__ == "__main__":
     boiler_points_to_download, boiler_data = get_data_from_smap(df_hw_temps, paths, smap_client, start, end)
 
     # create plots
-    boiler_plot = plot_boiler_temps(boiler_points_to_download, boiler_data)
+    fig_file = join(plot_folder, "boiler_temps.html")
+    boiler_plot = plot_boiler_temps(boiler_points_to_download, boiler_data, fig_file)
 
 
     #############################
@@ -296,7 +322,8 @@ if __name__ == "__main__":
     dischrg_temps_data = dischrg_temps_data1 + dischrg_temps_data2
 
     # create plots
-    dischrg_temps_plots = plot_multiple_entities(dischrg_temps_to_download, dischrg_temps_data, start, end, "hw_consumer_discharge_temps.html")
+    fig_file = join(plot_folder, "hw_consumer_discharge_temps.html")
+    dischrg_temps_plots = plot_multiple_entities(dischrg_temps_to_download, dischrg_temps_data, start, end, fig_file)
 
 
     #############################
@@ -325,8 +352,10 @@ if __name__ == "__main__":
     air_zones = zn_temps_to_download["t_unit"].str.contains("Air_Zone")
     rad_zones = zn_temps_to_download["t_unit"].str.contains("Radiant_Zone")
 
-    air_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[air_zones, :], zn_temps_data, start, end, "air_zone_temps.html")
-    rad_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[rad_zones, :], zn_temps_data, start, end, "rad_zone_temps.html")
+    fig_file_air = join(plot_folder, "air_zone_temps.html")
+    fig_file_rad = join(plot_folder, "rad_zone_temps.html")
+    air_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[air_zones, :], zn_temps_data, start, end, fig_file_air)
+    rad_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[rad_zones, :], zn_temps_data, start, end, fig_file_rad)
 
     import pdb; pdb.set_trace()
 
