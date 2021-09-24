@@ -33,7 +33,7 @@ def _query_hw_consumers(g):
     ?t_unit     brick:feeds+                ?room_space .
     ?room_space rdf:type/rdfs:subClassOf?   brick:HVAC_Zone .
 
-        FILTER NOT EXISTS { 
+        FILTER NOT EXISTS {
             ?subtype ^a ?t_unit ;
                 (rdfs:subClassOf|^owl:equivalentClass)* ?equip_type .
             filter ( ?subtype != ?equip_type )
@@ -75,6 +75,39 @@ def _clean_metadata(df_hw_consumers):
     hw_consumers = hw_consumers.drop(columns=["subtype"]).reset_index(drop=True)
 
     return hw_consumers
+
+
+def search_for_entities(g, class_type, point_list, relationship="brick:hasPoint"):
+    """
+    Return entities with the defined class type
+    """
+
+    if isinstance(point_list, list):
+        points = " ".join(point_list)
+
+    type_query = f"""SELECT DISTINCT * WHERE {{
+        VALUES          ?req_point {{ {points} }}
+        ?entity         rdf:type/rdfs:subClassOf?   {class_type} .
+        ?entity         {relationship}              ?entity_points .
+        ?entity_points  rdf:type/rdfs:subClassOf?   ?req_point .
+        ?entity         brick:isPartOf?             ?larger_comp .
+        ?larger_comp    rdf:type                    ?larger_comp_class .
+
+        FILTER NOT EXISTS {{
+            ?subtype ^a ?larger_comp ;
+                (rdfs:subClassOf|^owl:equivalentClass)* ?larger_comp_class .
+            filter ( ?subtype != ?larger_comp_class )
+            }}
+    }}
+    """
+
+    q_result = g.query(type_query)
+
+    df = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
+    #df = df.drop_duplicates(subset=['point_name']).reset_index(drop=True)
+
+    return df
+
 
 
 def return_entity_points(g, entity, point_list):
@@ -178,7 +211,70 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
     return plots
 
 
-def plot_boiler_temps(boiler_points_to_download, boiler_data, filename):
+def read_requests_data(hwc_request_file):
+
+    # read and setup hot water consumer file that contains
+    # number of requests from fast and slow reacting, and total requests
+    # sent to controller
+    hwcr_dat = pd.read_csv(hwc_request_file, header=None, index_col=3, parse_dates=True)
+    hwcr_dat.index.name = "timestamp"
+    hwcr_dat.columns = ["fast_react_req", "slow_react_req", "tlt_req_sent_ctrlr"]
+
+    return hwcr_dat
+
+def read_new_sp_data(boiler_sp_file):
+    # read and setup boiler setpoint file that contains
+    # new hot water setpoint calculated by controller
+    bsp_dat = pd.read_csv(boiler_sp_file, header=None, index_col=0, parse_dates=True)
+    bsp_dat.index.name = "timestamp"
+    bsp_dat.columns = ["controller_boiler_setpoint"]
+
+    # convert to degF
+    bsp_dat["controller_boiler_setpoint"] = (bsp_dat["controller_boiler_setpoint"] - 273.15)*1.8 + 32
+
+    return bsp_dat
+
+def add_ctrl_data(plt, boiler_sp_file):
+
+    bsp_dat = read_new_sp_data(boiler_sp_file)
+
+    # add data to plot
+    col_plt = "controller_boiler_setpoint"
+    plt.step(
+            bsp_dat.index,
+            bsp_dat[col_plt], legend_label=col_plt,
+            color = "#d53e4f", line_width=2.5, line_dash="dashed",
+            )
+
+    return plt
+
+def add_req_num_data(plt, hwc_request_file):
+
+    hwcr_dat = read_requests_data(hwc_request_file)
+
+    # add data to plot
+    col_plt = ["tlt_req_sent_ctrlr", "slow_react_req"]
+    colors = ["#4fd53e", "#d5c43e"]
+
+    new_p = figure(
+        plot_height=150, plot_width=1500,
+        x_axis_type="datetime", x_axis_location="below",
+        x_range=plt.x_range,
+        y_range=Range1d(start=0, end=15)
+        )
+    new_p.add_layout(Legend(), 'right')
+
+    for dd, col in enumerate(col_plt):
+        new_p.step(
+            hwcr_dat.index,
+            hwcr_dat[col], legend_label=col,
+            color = colors[dd], line_width=2,
+            )
+
+    return new_p
+
+
+def plot_boiler_temps(boiler_points_to_download, boiler_data, filename, ctrlr_sp=None, req_num=None):
 
     # plot settings
     plt_colors = Spectral8
@@ -193,6 +289,7 @@ def plot_boiler_temps(boiler_points_to_download, boiler_data, filename):
             y_range=Range1d(start=0, end=200)
             )
     p.add_layout(Legend(), 'right')
+    p.yaxis.axis_label = "Boiler temperatures"
 
     for i, dd in enumerate(boiler_data):
         p.step(
@@ -201,18 +298,30 @@ def plot_boiler_temps(boiler_points_to_download, boiler_data, filename):
             color = plt_colors[i % len(plt_colors)], line_width=2
             )
 
-    p.yaxis.axis_label = "Boiler temperatures"
-    p.legend.click_policy = "hide"
+    # add extra plot lines
+    if ctrlr_sp is not None:
+        p = add_ctrl_data(p, ctrlr_sp)
 
-    p.legend.label_text_font_size = "9px"
-    p.legend.label_height = 5
-    p.legend.glyph_height = 5
-    p.legend.spacing = 5
+    if req_num is not None:
+        new_p = add_req_num_data(p, req_num)
+        new_p.yaxis.axis_label = "HW Requests"
+
+        plots = [p, new_p]
+    else:
+        plots = [p]
+
+    for plt in plots:
+        plt.legend.click_policy = "hide"
+
+        plt.legend.label_text_font_size = "9px"
+        plt.legend.label_height = 5
+        plt.legend.glyph_height = 5
+        plt.legend.spacing = 5
 
     output_file(filename)
-    save(p)
+    save(column(plots))
 
-    return p
+    return plots
 
 
 def get_data_from_smap(points_to_download, paths, smap_client, start, end):
@@ -224,7 +333,7 @@ def get_data_from_smap(points_to_download, paths, smap_client, start, end):
     df_combine = pd.merge(data_paths.reset_index(), points_to_download, how="right", on="bacnet_instance")
 
     # get data from smap
-    data = smap_client.data_uuid(df_combine["index"], start, end)
+    data = smap_client.data_uuid(df_combine["index"], start, end, cache=False)
 
     return df_combine, data
 
@@ -235,6 +344,12 @@ if __name__ == "__main__":
     keyStr = "B7qm4nnyPVZXbSfXo14sBZ5laV7YY5vjO19G"
     where = "Metadata/SourceName = 'Field Study 4'"
 
+    # set file names
+    exp_brick_model_file = "../dbc_brick_expanded.ttl"
+    boiler_sp_file = join("Bldg_DATA", "boiler_setpoint.csv")
+    hwc_request_file = join("Bldg_DATA", "number_of_request.csv")
+
+    # set save folder names
     plot_folder = "./figures"
 
     # time interval for to download data
@@ -249,7 +364,6 @@ if __name__ == "__main__":
     paths = get_paths_from_tags(tags)
 
     # load schema files
-    exp_brick_model_file = "../dbc_brick_expanded.ttl"
     g = brickschema.Graph()
     g.load_file(exp_brick_model_file)
 
@@ -297,7 +411,7 @@ if __name__ == "__main__":
 
     # create plots
     fig_file = join(plot_folder, "boiler_temps.html")
-    boiler_plot = plot_boiler_temps(boiler_points_to_download, boiler_data, fig_file)
+    boiler_plot = plot_boiler_temps(boiler_points_to_download, boiler_data, fig_file, ctrlr_sp=boiler_sp_file, req_num=hwc_request_file)
 
 
     #############################
@@ -357,7 +471,25 @@ if __name__ == "__main__":
     air_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[air_zones, :], zn_temps_data, start, end, fig_file_air)
     rad_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[rad_zones, :], zn_temps_data, start, end, fig_file_rad)
 
+
+    #############################
+    ##### Return pump speed status
+    #############################
+    pumps = ["brick:Speed_Status", "brick:On_Off_Status"]
+    pumps_metadata = search_for_entities(g, "brick:Pump", pumps, relationship="brick:hasPoint")
+
+    df_pmp = []
+    for t_unit in pumps_metadata["entity"].unique():
+        df_pmp.append(return_entity_points(g, t_unit, pumps))
+
+    df_pmp = pd.concat(df_pmp).reset_index(drop=True)
+    df_pmp["bacnet_instance"] = df_pmp["bacnet_instance"].astype(int).astype(str)
+
+    # download data from smap
+    do_not_include = df_pmp["point_name"].str.contains("Analog")
+    pump_points_to_download, pump_data = get_data_from_smap(df_pmp.loc[~do_not_include, :], paths, smap_client, start, end)
+
+    # create plot
+    fig_file = join(plot_folder, "hydronic_plant_pumps.html")
+    pump_status_plots = plot_multiple_entities(pump_points_to_download, pump_data, start, end, fig_file, exclude_str=["Analog"])
     import pdb; pdb.set_trace()
-
-
-
