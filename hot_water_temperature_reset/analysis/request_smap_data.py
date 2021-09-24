@@ -428,12 +428,8 @@ if __name__ == "__main__":
     df_dischrg_temps["bacnet_instance"] = df_dischrg_temps["bacnet_instance"].astype(int).astype(str)
 
     # download data from smap
-    # TODO: figure out why there is a value error when downloading
-    dischrg_temps_to_download1, dischrg_temps_data1 = get_data_from_smap(df_dischrg_temps.loc[:19], paths, smap_client, start, end)
-    dischrg_temps_to_download2, dischrg_temps_data2 = get_data_from_smap(df_dischrg_temps.loc[20:], paths, smap_client, start, end)
-
-    dischrg_temps_to_download = pd.concat([dischrg_temps_to_download1, dischrg_temps_to_download2]).reset_index(drop=True)
-    dischrg_temps_data = dischrg_temps_data1 + dischrg_temps_data2
+    # TODO: there is a value error when cache is set to true
+    dischrg_temps_to_download, dischrg_temps_data = get_data_from_smap(df_dischrg_temps, paths, smap_client, start, end)
 
     # create plots
     fig_file = join(plot_folder, "hw_consumer_discharge_temps.html")
@@ -454,13 +450,8 @@ if __name__ == "__main__":
     df_zone_temps["bacnet_instance"] = df_zone_temps["bacnet_instance"].astype(int).astype(str)
 
     # download data from smap
-    # TODO: figure out why there is a value error when downloading
-    zn_temps_to_download1, zn_temps_data1 = get_data_from_smap(df_zone_temps.loc[:39], paths, smap_client, start, end)
-    zn_temps_to_download2, zn_temps_data2 = get_data_from_smap(df_zone_temps.loc[40:69], paths, smap_client, start, end)
-    zn_temps_to_download3, zn_temps_data3 = get_data_from_smap(df_zone_temps.loc[70:], paths, smap_client, start, end)
-
-    zn_temps_to_download = pd.concat([zn_temps_to_download1, zn_temps_to_download2, zn_temps_to_download3]).reset_index(drop=True)
-    zn_temps_data = zn_temps_data1 + zn_temps_data2 + zn_temps_data3
+    # TODO: there is a value error when cache is set to true
+    zn_temps_to_download, zn_temps_data = get_data_from_smap(df_zone_temps, paths, smap_client, start, end)
 
     # create plots
     air_zones = zn_temps_to_download["t_unit"].str.contains("Air_Zone")
