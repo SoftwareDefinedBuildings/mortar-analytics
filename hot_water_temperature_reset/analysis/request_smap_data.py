@@ -346,8 +346,8 @@ if __name__ == "__main__":
 
     # set file names
     exp_brick_model_file = "../dbc_brick_expanded.ttl"
-    boiler_sp_file = join("Bldg_DATA", "boiler_setpoint.csv")
-    hwc_request_file = join("Bldg_DATA", "number_of_request.csv")
+    boiler_sp_file = join("DATA", "boiler_setpoint.csv")
+    hwc_request_file = join("DATA", "number_of_request.csv")
 
     # set save folder names
     plot_folder = "./figures"
