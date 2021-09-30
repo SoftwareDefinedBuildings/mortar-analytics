@@ -4,19 +4,20 @@ import time
 from os.path import join
 import pandas as pd
 
+
+sys.path.append('../')
 import bacnet_and_data.readWriteProperty as BACpypesAPP
 from bacnet_and_data.ControlledBoiler import ControlledBoiler as Boiler
 
 # debugging setting
 _debug = 1
 
-
 if _debug: print("\nSetting up communication with BACnet network.\n")
-BACnet_init_filename = './bacnet_and_data/BACnet_init_temp_reset_2.ini'
+BACnet_init_filename = join("../", "bacnet_and_data", "BACnet_init_temp_reset_2.ini")
 access_bacnet = BACpypesAPP.Init(BACnet_init_filename)
 
 # define brick schema, extension, and building model
-schema_folder = join("./", "schema_and_models")
+schema_folder = join("../", "schema_and_models")
 
 brick_schema_file = join(schema_folder, "Brick.ttl")
 bldg_brick_model = join(schema_folder, "dbc.ttl")
