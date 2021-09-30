@@ -214,11 +214,11 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
 def read_requests_data(hwc_request_file):
 
     # read and setup hot water consumer file that contains
-    # number of requests from fast and slow reacting, and total requests
-    # sent to controller
+    # number of requests from fast and slow reacting, and Total Requests Sent
+    # to controller
     hwcr_dat = pd.read_csv(hwc_request_file, header=None, index_col=3, parse_dates=True)
     hwcr_dat.index.name = "timestamp"
-    hwcr_dat.columns = ["fast_react_req", "slow_react_req", "tlt_req_sent_ctrlr"]
+    hwcr_dat.columns = ["Fast Response Requests", "HTM Requests", "Total Requests Sent"]
 
     return hwcr_dat
 
@@ -227,10 +227,10 @@ def read_new_sp_data(boiler_sp_file):
     # new hot water setpoint calculated by controller
     bsp_dat = pd.read_csv(boiler_sp_file, header=None, index_col=0, parse_dates=True)
     bsp_dat.index.name = "timestamp"
-    bsp_dat.columns = ["controller_boiler_setpoint"]
+    bsp_dat.columns = ["Controller New HW Setpoint"]
 
     # convert to degF
-    bsp_dat["controller_boiler_setpoint"] = (bsp_dat["controller_boiler_setpoint"] - 273.15)*1.8 + 32
+    bsp_dat["Controller New HW Setpoint"] = (bsp_dat["Controller New HW Setpoint"] - 273.15)*1.8 + 32
 
     return bsp_dat
 
@@ -239,7 +239,7 @@ def add_ctrl_data(plt, boiler_sp_file):
     bsp_dat = read_new_sp_data(boiler_sp_file)
 
     # add data to plot
-    col_plt = "controller_boiler_setpoint"
+    col_plt = "Controller New HW Setpoint"
     plt.step(
             bsp_dat.index,
             bsp_dat[col_plt], legend_label=col_plt,
@@ -253,7 +253,7 @@ def add_req_num_data(plt, hwc_request_file):
     hwcr_dat = read_requests_data(hwc_request_file)
 
     # add data to plot
-    col_plt = ["tlt_req_sent_ctrlr", "slow_react_req"]
+    col_plt = ["Total Requests Sent", "HTM Requests"]
     colors = ["#4fd53e", "#d5c43e"]
 
     new_p = figure(
@@ -353,8 +353,8 @@ if __name__ == "__main__":
     plot_folder = "./figures"
 
     # time interval for to download data
-    start = dtutil.dt2ts(dtutil.strptime_tz("9-13-2021", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("9-24-2021", "%m-%d-%Y"))
+    start = dtutil.dt2ts(dtutil.strptime_tz("9-10-2021", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("10-05-2021", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
