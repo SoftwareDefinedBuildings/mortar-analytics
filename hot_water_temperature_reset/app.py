@@ -12,7 +12,7 @@ _debug = 1
 
 
 if _debug: print("\nSetting up communication with BACnet network.\n")
-BACnet_init_filename = './bacnet_and_data/BACnet_init_temp_reset.ini'
+BACnet_init_filename = './bacnet_and_data/BACnet_init_temp_reset_2.ini'
 access_bacnet = BACpypesAPP.Init(BACnet_init_filename)
 
 # define brick schema, extension, and building model
@@ -25,164 +25,6 @@ brick_extensions = [
     join(schema_folder, "bacnet_extension.ttl")
     ]
 
-
-# def return_equipment_points(brick_point_class, brick_equipment_class):
-#     """
-#     Return defined brick point class for piece of equipment
-#     """
-#     # query to return all setpoints of equipment
-#     term_query = f"""SELECT DISTINCT * WHERE {{
-#         ?t_unit         brick:hasPoint              ?t_unit_point .
-#         ?t_unit_point   rdf:type/rdfs:subClassOf*   brick:{brick_point_class} .
-#         ?t_unit_point   rdf:type                    ?point_type .
-
-#         ?t_unit_point   brick:bacnetPoint               ?bacnet_id .
-#         ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
-#         ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
-#         ?bacnet_id      brick:accessedAt                ?bacnet_net .
-#         ?bacnet_net     dbc:connstring                  ?bacnet_addr .
-
-#         FILTER NOT EXISTS {{ 
-#             ?subtype ^a ?t_unit_point ;
-#                 (rdfs:subClassOf|^owl:equivalentClass)* ?point_type .
-#             filter ( ?subtype != ?point_type )
-#             }}
-#         }}"""
-
-#     # execute the query
-#     if _debug: print(f"Retrieving {brick_point_class} BACnet information for {brick_equipment_class}\n")
-#     term_query_result = g.query(term_query, initBindings={"t_unit": brick_equipment_class})
-
-#     df_term_query_result = pd.DataFrame(term_query_result, columns=[str(s) for s in term_query_result.vars])
-#     df_term_query_result.loc[:, "short_point_type"] = [shpt.split("#")[1] for shpt in df_term_query_result["point_type"]]
-#     df_unique_stpt_class = df_term_query_result.drop_duplicates(subset=["t_unit_point", "point_type"])
-
-#     return df_unique_stpt_class
-
-
-# def return_bacnet_point(df_term_query_result, point_priority):
-#     """
-#     Return bacnet point information for defined point class
-#     """
-
-#     # return bacnet point id for setpoint class that was found
-#     bacnet_id = None
-#     for stpt_class in point_priority:
-#         df_setpoint_class = df_term_query_result.loc[df_term_query_result["short_point_type"].isin([stpt_class]), :]
-#         if df_setpoint_class.shape[0] > 0:
-#             bacnet_id = df_setpoint_class.loc[df_setpoint_class.index[0], "bacnet_id"]
-#             break
-
-#     if bacnet_id is not None:
-#         bacnet_query = f"""SELECT ?bacnet_id ?t_unit_point ?bacnet_instance ?bacnet_type ?bacnet_addr ?point_type WHERE {{
-#             ?t_unit_point  brick:bacnetPoint                ?bacnet_id .
-#             ?bacnet_id     brick:hasBacnetDeviceInstance    ?bacnet_instance .
-#             ?bacnet_id     brick:hasBacnetDeviceType        ?bacnet_type .
-#             ?bacnet_id     brick:accessedAt                 ?bacnet_net .
-#             ?bacnet_net    dbc:connstring                   ?bacnet_addr .
-#             ?t_unit_point  rdf:type                         ?point_type .
-#             }}"""
-
-#         bacnet_query_result = g.query(bacnet_query, initBindings={"bacnet_id": bacnet_id})
-#         df_bacnet_query_result = pd.DataFrame(bacnet_query_result, columns=[str(s) for s in bacnet_query_result.vars]).drop_duplicates(subset=["bacnet_id"])
-#         df_bacnet_query_result["short_point_type"] = [shpt.split("#")[1] for shpt in df_bacnet_query_result["point_type"]]
-
-#     else:
-#         print("NO BACNET POINT ID FOUND!!")
-#         df_bacnet_query_result = None
-
-#     return df_bacnet_query_result
-
-
-# def return_equipment_controlled_temp_bacnet_point(zn_t_unit_name):
-#     """
-#     Return the bacnet id of the controlled temperature of the defined equipment
-#     """
-#     point_priority = [
-#         "Discharge_Air_Temperature_Sensor",
-#         "Embedded_Temperature_Sensor",
-#         "Hot_Water_Supply_Temperature_Sensor",
-#         "Discharge_Water_Temperature_Sensor",
-#         "Air_Temperature_Sensor",
-#         "Water_Temperature_Sensor",
-#         "Temperature_Sensor"
-#     ]
-
-#     brick_point_class = "Temperature_Sensor"
-#     brick_equipment_class = zn_t_unit_name
-
-#     df_term_query_result = return_equipment_points(brick_point_class, brick_equipment_class)
-
-#     sensor_bacnet_point = return_bacnet_point(df_term_query_result, point_priority)
-
-#     return(sensor_bacnet_point)
-
-
-# def return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name):
-#     """
-#     Return setpoint for defined equipment
-#     """
-#     # define order of setpoint classes
-#     setpoint_priority = [
-#         f"Effective_Air_Temperature_{hvac_mode}_Setpoint",
-#         "Effective_Air_Temperature_Setpoint",
-#         f"Discharge_Air_Temperature_{hvac_mode}_Setpoint",
-#         f"Discharge_Air_Temperature_Setpoint",
-#         "Supply_Hot_Water_Temperature_Setpoint",
-#         "Discharge_Water_Temperature_Setpoint",
-#         f"{hvac_mode}_Temperature_Setpoint",
-#         "Air_Temperature_Setpoint",
-#         "Embedded_Temperature_Setpoint",
-#         "Water_Temperature_Setpoint"
-#         ]
-
-#     brick_point_class = "Temperature_Setpoint"
-#     brick_equipment_class = zn_t_unit_name
-
-#     df_term_query_result = return_equipment_points(brick_point_class, brick_equipment_class)
-
-#     setpoint_bacnet_point = return_bacnet_point(df_term_query_result, setpoint_priority)
-
-#     return(setpoint_bacnet_point)
-
-
-# def return_zone_temp_bacnet_point(zn_t_unit_name):
-#     """
-#     Return zone temperature for the zone that is served
-#     by the defined terminal unit
-#     """
-
-#     pass
-
-
-# def bacnet_read(bacnet_point, read_attr='presentValue'):
-#     address  = str(bacnet_point['bacnet_addr'][0])
-#     obj_type = str(bacnet_point['bacnet_type'][0])
-#     obj_inst = int(bacnet_point['bacnet_instance'][0])
-
-#     args = [address, obj_type, obj_inst, read_attr]
-#     value_read = BACpypesAPP.read_prop(args)
-
-#     return value_read
-
-
-# def print_bacnet_point(bacnet_point, inside_bacnet=False, read_attr='presentValue'):
-#     """
-#     Print point name and info or read value off the bacnet network
-#     """
-#     if bacnet_point is not None:
-#         class_name = bacnet_point['short_point_type'][0]
-#         point_name = bacnet_point['t_unit_point'][0].split('#')[1]
-#         bacnet_id = bacnet_point['bacnet_instance'][0]
-#     else:
-#         print("BACnet point not found in brick model!")
-#         return None
-
-#     if not inside_bacnet:
-#         print(f"{point_name} ({class_name}) has BACnet ID of {bacnet_id}")
-#     else:
-#         value_read = bacnet_read(bacnet_point, read_attr=read_attr)
-#         print(f"Reading {point_name} ({class_name}) = {value_read}")
 
 def _query_hw_consumers(g):
     """
@@ -250,7 +92,7 @@ if __name__ == "__main__":
     # load schema files
     g = brickschema.Graph()
 
-    if False:
+    if True:
         if _debug: print("Loading in building's Brick model.\n")
         g.load_file(brick_schema_file)
         [g.load_file(fext) for fext in brick_extensions]
@@ -297,38 +139,5 @@ if __name__ == "__main__":
         hw_consumers = df_hw_consumers.loc[boiler_consumers, :]
         boilers2control.append(Boiler(boiler, hw_consumers, g, BACpypesAPP))
 
-    boilers2control[0].run_test()
+    #boilers2control[0].run_test()
     import pdb; pdb.set_trace()
-
-
-    # while True:
-    #     bacnet_rad_valves.archive_sensor_values()
-    #     time.sleep(bacnet_rad_valves.reading_rate)
-
-
-    # # iterate through each equipment setpoints and zone temperatures
-    # for i, equip_row in df_hw_consumers.iterrows():
-    #     zn_t_unit_name = equip_row["t_unit"]
-    #     zn_t_unit_type = equip_row["equip_type"]
-    #     print(f"\n{zn_t_unit_name}")
-
-    #     hvac_mode = "Heating"
-
-    #     equip_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zn_t_unit_name)
-    #     equip_stpt_bacnet_point = return_equipment_setpoint_bacnet_point(hvac_mode, zn_t_unit_name)
-
-    #     print_bacnet_point(equip_ctrl_temp_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
-    #     print_bacnet_point(equip_stpt_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
-
-
-    # # iterate through each zone setpoints and zone temperature
-    # for zone in df_hw_consumers['room_space'].unique():
-    #     zone_ctrl_temp_bacnet_point = return_equipment_controlled_temp_bacnet_point(zone)
-    #     zone_stpt_bacnet_point = return_equipment_setpoint_bacnet_point('Heating', zone)
-
-    #     print_bacnet_point(zone_ctrl_temp_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
-    #     print_bacnet_point(zone_stpt_bacnet_point, inside_bacnet=access_bacnet, read_attr='presentValue')
-
-
-
-import pdb; pdb.set_trace()
