@@ -93,7 +93,9 @@ if __name__ == "__main__":
     # load schema files
     g = brickschema.Graph()
 
-    if True:
+    expanded_brick_model = "../dbc_brick_expanded.ttl"
+
+    if False:
         if _debug: print("Loading in building's Brick model.\n")
         g.load_file(brick_schema_file)
         [g.load_file(fext) for fext in brick_extensions]
@@ -108,12 +110,11 @@ if __name__ == "__main__":
         print(f"Inferred graph has {len(g)} triples")
 
         # serialize inferred Brick to output
-        with open("dbc_brick_expanded.ttl", "wb") as fp:
+        with open(expanded_brick_model, "wb") as fp:
             fp.write(g.serialize(format="turtle").rstrip())
             fp.write(b"\n")
     else:
         if _debug: print("Loading existing, pre-expanded building Brick model.\n")
-        expanded_brick_model = "dbc_brick_expanded.ttl"
         g.load_file(expanded_brick_model)
 
     if False:
