@@ -14,7 +14,7 @@ class ControlledBoiler(object):
     """
 
     # debugging setting
-    _debug = 0
+    _debug = 1
 
     def __init__(self, boiler_name, hw_consumers, brick_model, bacpypesAPP):
 
@@ -61,8 +61,6 @@ class ControlledBoiler(object):
 
         for point in self.boiler_points:
             bacnet_info = self.return_equipment_points(point, self.boiler_name)
-
-            import pdb; pdb.set_trace()
 
             if bacnet_info.shape[0] > 1:
                 print(f"There is more than one {point} found for {self.boiler_name}\n!")
