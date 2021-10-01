@@ -36,6 +36,7 @@ class ControlledBoiler(object):
             "Supply_Water_Temperature_Setpoint": None,
             "High_Setpoint_Limit": None,
             "Low_Setpoint_Limit": None,
+            "Enable_Command": None,
             }
 
         self.ctrl_params    = {
@@ -60,6 +61,8 @@ class ControlledBoiler(object):
 
         for point in self.boiler_points:
             bacnet_info = self.return_equipment_points(point, self.boiler_name)
+
+            import pdb; pdb.set_trace()
 
             if bacnet_info.shape[0] > 1:
                 print(f"There is more than one {point} found for {self.boiler_name}\n!")
@@ -151,6 +154,15 @@ class ControlledBoiler(object):
         """
 
         return self.get_point_value(self.boiler_points["Supply_Water_Temperature_Setpoint"])
+
+
+    def get_boiler_status(self):
+        """
+        Retreive boiler maximum temperature setpoint
+        """
+
+        return self.get_point_value(self.boiler_points["Enable_Command"])
+
 
     def get_hw_supply_temp(self):
         """

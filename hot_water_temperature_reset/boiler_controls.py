@@ -216,6 +216,7 @@ class Boiler_Controller:
 
     def get_current_state(self): 
         ## get data from BMS and return a dictionary 
+        boiler_status = self.bldg_boilers[0].get_boiler_status()
         num_requests = self.bldg_boilers[0].get_num_requests()
         cur_boiler_setpoint = self.bldg_boilers[0].get_boiler_setpoint()
         hw_sup_temp = self.bldg_boilers[0].get_hw_supply_temp()
@@ -224,6 +225,7 @@ class Boiler_Controller:
         boiler_min_sp = self.bldg_boilers[0].get_min_temp_setpoint()
 
         current_state = {
+            'boiler_status': boiler_status,
             'num_requests': num_requests,
             'current_boiler_setpoint': self.convert_degF_to_K(cur_boiler_setpoint),
             'hw_supply_temperature': self.convert_degF_to_K(hw_sup_temp),
