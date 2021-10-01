@@ -238,7 +238,7 @@ class ControlledBoiler(object):
         """
         quick_consumers = self.hw_consumers.loc[~self.hw_consumers.loc[:, "htm"], :]
 
-        threshold_position = 50.0
+        threshold_position = 95.0
 
         req_count = 0
         for i, unit in quick_consumers.iterrows():
