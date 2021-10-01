@@ -58,7 +58,7 @@ class SaveBacnetPoints(object):
                 sensor_name = str(row["point_name"]).split("#")[-1]
                 sensor_unit = str(row["unit"]).split("/")[-1]
 
-                sensor_records[sensor_id] = {
+                sensor_records[str(sensor_id)] = {
                     "name": sensor_name,
                     "unit": sensor_unit,
                     "readings": []
@@ -192,8 +192,10 @@ class SaveBacnetPoints(object):
         current_readings = self.get_sensor_value()
 
         for sensor_id, reading_time, sensor_val in current_readings:
+            sensor_id = str(sensor_id)
+
             # check if max records has been reached, if yes then remove oldest record
-            if len(self.sensor_records[sensor_id]["readings"]) > self.max_records:
+            if len(self.sensor_records[sensor_id]["readings"]) >= self.max_records:
                 removed_record = self.sensor_records[sensor_id]["readings"].pop(0)
 
             self.sensor_records[sensor_id]["readings"].append((reading_time, self.convert_to_int(sensor_val)))
