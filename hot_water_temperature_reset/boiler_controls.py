@@ -1,5 +1,4 @@
 #TODO: add bounds for temperature setpoints
-
 from pyfmi import load_fmu
 import yaml
 import numpy as np
@@ -43,6 +42,8 @@ class Boiler_Controller:
         self.brick_file = self.config.get('brick_file')
         self.bacnet_ini_file = self.config.get('bacnet_init_file')
 
+        self.sim_boiler_status = True
+        self.switch_boiler_time = pd.Timestamp.now()
         self.load_brick_model()
         self.initialize_bacnet_comm()
         self.initialize_bldg_boilers()
@@ -190,6 +191,13 @@ class Boiler_Controller:
         f.close()
 
 
+    def save_sim_boiler_status(self, new_boiler_status):
+        # save to file
+        with open('./DATA/boiler_status.csv', mode='a') as f:
+            f.write(f"{pd.Timestamp.now()},{new_boiler_status}\n")
+        f.close()
+
+
     def send_new_setpoint_to_boiler(self, new_boiler_setpoint):
         degF_boiler_setpoint = self.convert_K_to_degF(new_boiler_setpoint)
 
@@ -236,6 +244,41 @@ class Boiler_Controller:
 
         return current_state
 
+    def simulate_boiler_status(self, current_status):
+        """
+        Place holder to simulate boiler on status
+        """
+
+        # prob_transition = random.uniform(0,1)
+
+        # if current_status == True:
+        #     new_status = prob_transition < .90
+        # else:
+        #     new_status = prob_transition < .30
+
+        start_boiler_time = 6
+        end_boiler_time = 20
+
+        cur_time = pd.Timestamp.now()
+        sch_time = cur_time.hour >= start_boiler_time and cur_time.hour < end_boiler_time
+
+        new_status = False
+        if sch_time:
+            if cur_time > self.switch_boiler_time:
+                if self.sim_boiler_status:
+                    self.switch_boiler_time = cur_time + pd.Timedelta('1hour')
+                else:
+                    self.switch_boiler_time = cur_time + pd.Timedelta('30min')
+                new_status = not self.sim_boiler_status
+
+        # save enable
+        print(f"Current Simulated Boiler Status ==  {new_status}")
+        self.sim_boiler_status = new_status
+        self.save_sim_boiler_status(new_status)
+
+        return new_status
+
+
     async def _periodic_advance_time(self):
         while True:
             print("current time == {}".format(self.current_time))
@@ -244,15 +287,18 @@ class Boiler_Controller:
 
             boiler_values = self.get_current_state()
 
-            inputs = (
-                    #change input variables below
-                    ['uStaCha', 'uHotWatPumSta[1]', 'uHotWatPumSta[2]', 'nHotWatSupResReq', 'uTyp[1]', 'uCurStaSet'],
-                    np.array(
-                        [[start, False, True, True, boiler_values.get('num_requests'), 1, 1],
-                         [end, False, True, True, boiler_values.get('num_requests'), 1, 1]]
+            #TODO: When closing the loop, simulated boiler status to boiler_values.get('boiler_status')
+
+            if self.simulate_boiler_status(self.sim_boiler_status):
+                inputs = (
+                        #change input variables below
+                        ['uStaCha', 'uHotWatPumSta[1]', 'uHotWatPumSta[2]', 'nHotWatSupResReq', 'uTyp[1]', 'uCurStaSet'],
+                        np.array(
+                            [[start, False, True, True, boiler_values.get('num_requests'), 1, 1],
+                            [end, False, True, True, boiler_values.get('num_requests'), 1, 1]]
+                        )
                     )
-                )
-            self.boiler.simulate(start, end, inputs, options=self.model_options)
+                self.boiler.simulate(start, end, inputs, options=self.model_options)
 
             latest_boiler_setpoint = self.boiler.get('TPlaHotWatSupSet')[0]
             print(latest_boiler_setpoint)
