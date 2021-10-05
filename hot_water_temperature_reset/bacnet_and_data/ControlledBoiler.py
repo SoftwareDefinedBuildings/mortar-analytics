@@ -15,6 +15,7 @@ class ControlledBoiler(object):
 
     # debugging setting
     _debug = 1
+    _verbose = 0
 
     def __init__(self, boiler_name, hw_consumers, brick_model, bacpypesAPP):
 
@@ -115,7 +116,7 @@ class ControlledBoiler(object):
 
 
         # start collecting data
-        if self._debug: print("Starting archiving htm terminal control data.\n")
+        if self._debug: print(f"[{pd.Timestamp.now()}] Starting archiving htm terminal control data.\n")
         archive_htm_data = threading.Thread(target=self.collect_htm_data)
         archive_htm_data.daemon = True
         archive_htm_data.start()
@@ -236,7 +237,7 @@ class ControlledBoiler(object):
 
     def run_test(self):
         # start request calcs test
-        if self._debug: print("Starting running test on determining requests.\n")
+        if self._debug: print(f"[{pd.Timestamp.now()}] Starting running test on determining requests.\n")
         run_test = threading.Thread(target=self.test_num_request)
         #run_test.daemon = True
         run_test.start()
@@ -294,6 +295,7 @@ class ControlledBoiler(object):
         """
         Calcuate the number of requests for high thermal mass terminal units
         """
+        if self._debug: print(f"[{pd.Timestamp.now()}] Starting to determine hotter water requests for slow reacting units.\n")
         slow_consumers = self.hw_consumers.loc[self.hw_consumers.loc[:, "htm"], :]
         threshold_time = 6*3600
         threshold_position = 0.5
@@ -474,8 +476,11 @@ class ControlledBoiler(object):
                 }}
             }}"""
 
+        if debug:
+            import pdb; pdb.set_trace()
+
         # execute the query
-        if self._debug: print(f"Retrieving {brick_point_class} BACnet information for {equip_name}\n")
+        if self._debug and self._verbose: print(f"[{pd.Timestamp.now()}] Retrieving {brick_point_class} BACnet information for {equip_name}\n")
         term_query_result = self.brick_model.query(term_query, initBindings={"t_unit": equip_name})
 
         df_term_query_result = pd.DataFrame(term_query_result, columns=[str(s) for s in term_query_result.vars])

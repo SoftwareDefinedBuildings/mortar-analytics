@@ -35,7 +35,7 @@ class Boiler_Controller:
 
         self.model_options = self.boiler.simulate_options()
         self.model_options['initialize'] = True
-        self._model_update_rate = self.config.get('model_update_rate', 30)
+        self._model_update_rate = self.config.get('model_update_rate', 300)
         self.model_options['CVode_options']['rtol'] = 1e-6
         self.model_options['CVode_options']['atol'] = 1e-8
 
@@ -90,13 +90,13 @@ class Boiler_Controller:
 
 
     def load_brick_model(self):
-        if _debug: print("Loading existing, pre-expanded building Brick model.\n")
+        if _debug: print(f"[{pd.Timestamp.now()}] Loading existing, pre-expanded building Brick model.\n")
         g = brickschema.Graph()
         self.brick_model = g.load_file(self.brick_file)
 
 
     def initialize_bacnet_comm(self):
-        if _debug: print("\nSetting up communication with BACnet network.\n")
+        if _debug: print(f"\n[{pd.Timestamp.now()}] Setting up communication with BACnet network.\n")
         self.access_bacnet = BACpypesAPP.Init(self.bacnet_ini_file)
 
 
@@ -121,7 +121,7 @@ class Boiler_Controller:
                 }
         }
         """
-        if _debug: print("Retrieving hot water consumers for each boiler.\n")
+        if _debug: print(f"[{pd.Timestamp.now()}] Retrieving hot water consumers for each boiler.\n")
 
         q_result = self.brick_model.query(hw_consumers_query)
         df_hw_consumers = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
@@ -159,7 +159,7 @@ class Boiler_Controller:
 
 
     def initialize_bldg_boilers(self):
-        if _debug: print("Identifying each boiler's hot water consumers.\n")
+        if _debug: print(f"[{pd.Timestamp.now()}] Identifying each boiler's hot water consumers.\n")
         hw_consumers = self.query_hw_consumers()
         self.hw_consumers = self.clean_metadata(hw_consumers)
 
@@ -170,7 +170,7 @@ class Boiler_Controller:
             boiler_consumers = self.hw_consumers.loc[boiler_consumers, :]
             boiler2control.append(Boiler(boiler, boiler_consumers, self.brick_model, BACpypesAPP))
 
-            if _debug: print(f"Setup for {boiler} ({b} of {len(unique_boilers)}) is finished\n")
+            if _debug: print(f"[{pd.Timestamp.now()}] Setup for {boiler} ({b+1} of {len(unique_boilers)}) is finished\n")
 
         self.bldg_boilers = boiler2control
 
@@ -211,7 +211,7 @@ class Boiler_Controller:
 
     async def _update_state(self):
         while True:
-            print("hello")
+            print(f"[{pd.Timestamp.now()}] Controller tick ...")
             await asyncio.sleep(60)
 
     def get_current_state(self): 
