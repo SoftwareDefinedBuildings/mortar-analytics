@@ -247,13 +247,14 @@ class ControlledBoiler(object):
         """
         Determine the number of hot water requests from fast reacting terminal units
         """
+        if self._debug: print(f"[{pd.Timestamp.now()}] Starting to determine hotter water requests for fast reacting units.\n")
         quick_consumers = self.hw_consumers.loc[~self.hw_consumers.loc[:, "htm"], :]
-
         threshold_position = 95.0
 
         req_count = 0
         for i, unit in quick_consumers.iterrows():
             consumer_vlv = self._query_hw_consumer_valve(unit["t_unit"])
+            consumer_heat_mode = self._query_hw_mode_status(unit["t_unit"])
 
             if consumer_vlv.shape[0] > 1:
                 if "TABs_Radiant_Loop" in unit["t_unit"]:
@@ -269,24 +270,25 @@ class ControlledBoiler(object):
             vlv_val = self.get_point_value(consumer_vlv.iloc[0])
             vlv_timestamp = pd.Timestamp.now()
 
-            if self._debug: print(vlv_val, " | ", unit["t_unit"], " | ")
+            if self._debug and self._verbose: print(vlv_val, " | ", unit["t_unit"], " | ")
 
             # save to container
             self.hw_consumers.loc[unit.name, "last_req_val"] = vlv_val
             self.hw_consumers.loc[unit.name, "last_req_time"] = vlv_timestamp
 
-            if isinstance(vlv_val, str):
-                if vlv_val.lower() in ['active', 'on']:
-                    req_count+=1
-            elif "binary" in str(consumer_vlv.iloc[0]["bacnet_type"]):
-                if vlv_val == 1:
-                    req_count+=1
-            elif "PERCENT" in str(consumer_vlv.iloc[0]["val_unit"]) or vlv_val > 1:
-                if vlv_val > threshold_position:
-                    req_count+=1
-            else:
-                if vlv_val > threshold_position/100:
-                    req_count+=1
+            if consumer_heat_mode:
+                if isinstance(vlv_val, str):
+                    if vlv_val.lower() in ['active', 'on']:
+                        req_count+=1
+                elif "binary" in str(consumer_vlv.iloc[0]["bacnet_type"]):
+                    if vlv_val == 1:
+                        req_count+=1
+                elif "PERCENT" in str(consumer_vlv.iloc[0]["val_unit"]) or vlv_val > 1:
+                    if vlv_val > threshold_position:
+                        req_count+=1
+                else:
+                    if vlv_val > threshold_position/100:
+                        req_count+=1
 
         return req_count
 
