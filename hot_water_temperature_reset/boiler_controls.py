@@ -262,7 +262,7 @@ class Boiler_Controller:
         cur_time = pd.Timestamp.now()
         sch_time = cur_time.hour >= start_boiler_time and cur_time.hour < end_boiler_time
 
-        new_status = False
+        new_status = self.sim_boiler_status
         if sch_time:
             if cur_time > self.switch_boiler_time:
                 if self.sim_boiler_status:
@@ -270,6 +270,9 @@ class Boiler_Controller:
                 else:
                     self.switch_boiler_time = cur_time + pd.Timedelta('30min')
                 new_status = not self.sim_boiler_status
+        else:
+            new_status = False
+
 
         # save enable
         print(f"Current Simulated Boiler Status ==  {new_status}")
