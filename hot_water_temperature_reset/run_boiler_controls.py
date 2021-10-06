@@ -43,7 +43,7 @@ class Boiler_Controller:
         self.bacnet_ini_file = self.config.get('bacnet_init_file')
 
         self.sim_boiler_status = True
-        self.switch_boiler_time = pd.Timestamp.now()
+        self.switch_boiler_time = pd.Timestamp.now() + pd.Timedelta('1hour')
         self.load_brick_model()
         self.initialize_bacnet_comm()
         self.initialize_bldg_boilers()
@@ -256,8 +256,8 @@ class Boiler_Controller:
         # else:
         #     new_status = prob_transition < .30
 
-        start_boiler_time = 6
-        end_boiler_time = 20
+        start_boiler_time = 0
+        end_boiler_time = 24
 
         cur_time = pd.Timestamp.now()
         sch_time = cur_time.hour >= start_boiler_time and cur_time.hour < end_boiler_time
@@ -275,7 +275,8 @@ class Boiler_Controller:
 
 
         # save enable
-        print(f"Current Simulated Boiler Status ==  {new_status}")
+        print(f"[{pd.Timestamp.now()}] Current Simulated Boiler Status ==  {new_status}")
+        print(f"[{pd.Timestamp.now()}] Switching to {not new_status} at {self.switch_boiler_time}")
         self.sim_boiler_status = new_status
         self.save_sim_boiler_status(new_status)
 
@@ -304,7 +305,7 @@ class Boiler_Controller:
                 self.boiler.simulate(start, end, inputs, options=self.model_options)
 
             latest_boiler_setpoint = self.boiler.get('TPlaHotWatSupSet')[0]
-            print(latest_boiler_setpoint)
+            print(f"[{pd.Timestamp.now()}] new hot water setpoint {latest_boiler_setpoint} K ({self.convert_K_to_degF(latest_boiler_setpoint)} degF)")
             self.save_new_setpoint_file(latest_boiler_setpoint)
 
 
