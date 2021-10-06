@@ -27,64 +27,47 @@ brick_extensions = [
     ]
 
 
-def _query_hw_consumers(g):
+def query_hw_consumers(g):
     """
     Retrieve hot water consumers in the building, their respective
     boiler(s), and relevant hvac zones.
     """
     # query direct and indirect hot water consumers
-    hw_consumers_query = """SELECT DISTINCT * WHERE {
-    ?boiler     rdf:type/rdfs:subClassOf?   brick:Boiler .
-    ?boiler     brick:feeds+                ?t_unit .
-    ?t_unit     rdf:type                    ?equip_type .
-    ?mid_equip  brick:feeds                 ?t_unit .
-    ?t_unit     brick:feeds+                ?room_space .
-    ?room_space rdf:type/rdfs:subClassOf?   brick:HVAC_Zone .
-
-        FILTER NOT EXISTS { 
-            ?subtype ^a ?t_unit ;
-                (rdfs:subClassOf|^owl:equivalentClass)* ?equip_type .
-            filter ( ?subtype != ?equip_type )
-            }
+    hw_consumers_query = """ SELECT DISTINCT * WHERE {
+        VALUES ?t_type { brick:Equipment brick:Water_Loop }
+        ?boiler     rdf:type/rdfs:subClassOf?   brick:Boiler .
+        ?boiler     brick:feeds+                ?t_unit .
+        ?t_unit     brick:isFedBy               ?mid_equip .
+        ?t_unit     rdf:type/rdfs:subClassOf?   ?t_type .
     }
     """
+
     if _debug: print("Retrieving hot water consumers for each boiler.\n")
 
     q_result = g.query(hw_consumers_query)
     df_hw_consumers = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
 
-    #df_unique_hw_consumers = df_hw_consumers.drop_duplicates(subset=["t_unit"])
+    # Verify that intermediate equipment is part of hot water system
+    boilers = list(df_hw_consumers["boiler"].unique())
+    terminal_units = list(df_hw_consumers["t_unit"].unique())
+    part_hw_sys = df_hw_consumers["mid_equip"].isin(boilers + terminal_units)
 
-    return df_hw_consumers
+    #df_unique_hw_consumers = df_hw_consumers.drop_duplicates(subset=["t_unit"]
+    return df_hw_consumers.loc[part_hw_sys, :]
 
 
-def _clean_metadata(df_hw_consumers):
+def clean_metadata(df_hw_consumers):
     """
     Cleans metadata dataframe to have unique hot water consumers with
     most specific classes associated to other relevant information.
     """
 
-    unique_t_units = df_hw_consumers.loc[:, "t_unit"].unique()
     direct_consumers_bool = df_hw_consumers.loc[:, 'mid_equip'] == df_hw_consumers.loc[:, 'boiler']
 
-    direct_consumers = df_hw_consumers.loc[direct_consumers_bool, :]
-    indirect_consumers = df_hw_consumers.loc[~direct_consumers_bool, :]
+    df_hw_consumers.loc[direct_consumers_bool, "consumer_type"] = "direct"
+    df_hw_consumers.loc[~direct_consumers_bool, "consumer_type"] = "indirect"
 
-    # remove any direct hot consumers listed in indirect consumers
-    for unit in direct_consumers.loc[:, "t_unit"].unique():
-        indir_test = indirect_consumers.loc[:, "t_unit"] == unit
-
-        # update indirect consumers df
-        indirect_consumers = indirect_consumers.loc[~indir_test, :]
-
-    # label type of hot water consumer
-    direct_consumers.loc[:, "consumer_type"] = "direct"
-    indirect_consumers.loc[:, "consumer_type"] = "indirect"
-
-    hw_consumers = pd.concat([direct_consumers, indirect_consumers])
-    hw_consumers = hw_consumers.drop(columns=["subtype"]).reset_index(drop=True)
-
-    return hw_consumers
+    return df_hw_consumers
 
 
 
@@ -131,8 +114,8 @@ if __name__ == "__main__":
 
 
     # query hot water consumers and clean metadata
-    df_hw_consumers = _query_hw_consumers(g)
-    df_hw_consumers = _clean_metadata(df_hw_consumers)
+    df_hw_consumers = query_hw_consumers(g)
+    df_hw_consumers = clean_metadata(df_hw_consumers)
 
     # Define boilers to be controlled
     boilers2control = []
