@@ -286,23 +286,24 @@ class Boiler_Controller:
     async def _periodic_advance_time(self):
         while True:
             print("current time == {}".format(self.current_time))
-            start = self.current_time
-            end = self.current_time + self._model_update_rate
-
             boiler_values = self.get_current_state()
 
             #TODO: When closing the loop, simulated boiler status to boiler_values.get('boiler_status')
 
-            if self.simulate_boiler_status(self.sim_boiler_status):
+            pumps_enabled = self.simulate_boiler_status(self.sim_boiler_status)
+            if pumps_enabled:
+                start = self.current_time
+                end = self.current_time + self._model_update_rate
                 inputs = (
                         #change input variables below
                         ['uStaCha', 'uHotWatPumSta[1]', 'uHotWatPumSta[2]', 'nHotWatSupResReq', 'uTyp[1]', 'uCurStaSet'],
                         np.array(
-                            [[start, False, True, True, boiler_values.get('num_requests'), 1, 1],
-                            [end, False, True, True, boiler_values.get('num_requests'), 1, 1]]
+                            [[start, False, pumps_enabled, pumps_enabled, boiler_values.get('num_requests'), 1, 1],
+                            [end, False, pumps_enabled, pumps_enabled, boiler_values.get('num_requests'), 1, 1]]
                         )
                     )
                 self.boiler.simulate(start, end, inputs, options=self.model_options)
+                self.current_time = self.current_time + self._model_update_rate
 
             latest_boiler_setpoint = self.boiler.get('TPlaHotWatSupSet')[0]
             print(f"[{pd.Timestamp.now()}] new hot water setpoint {latest_boiler_setpoint} K ({self.convert_K_to_degF(latest_boiler_setpoint)} degF)")
@@ -312,7 +313,6 @@ class Boiler_Controller:
             # return latest_boiler_setpoint <<<---- CARLOS: use this to generate setpoint 
             ## TODO: self.set_boiler_setpoint(latest_boiler_setpoint (F)) 
 
-            self.current_time = self.current_time + self._model_update_rate
             await asyncio.sleep(self._model_update_rate)
 
 
