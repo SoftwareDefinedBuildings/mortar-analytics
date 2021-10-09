@@ -97,16 +97,13 @@ class ControlledBoiler(object):
         # identify high thermal mass terminal units
         self.hw_consumers.loc[:, "htm"] = self.hw_consumers["equip_type"].str.contains('|'.join(self.htm_terminals))
         self.hw_consumers.loc[self.hw_consumers["htm"].isin([None]), "htm"] = False
+        self.hw_consumers.loc[:, "htm"] = self.hw_consumers.loc[:, "htm"].astype('bool')
 
         df_vlvs = pd.DataFrame.from_records(list(self.hw_consumers.loc[self.hw_consumers["htm"], "ctrl_vlv"]))
 
         self.htm =  bms.SaveBacnetPoints(df_vlvs, self.bacpypesAPP, timezone='US/Pacific', 
                                             prj_folder='./', data_file='rad_vlv_measurements'
                                             )
-
-        # add bacnet id to self.hw_consumers
-        self.hw_consumers = pd.merge(self.hw_consumers, df_vlvs.loc[:, ["rad_panel", "bacnet_instance"]], how="left", left_on="t_unit", right_on="rad_panel")
-
 
         # start collecting data
         if self._debug: print(f"[{pd.Timestamp.now()}] Starting archiving htm terminal control data.\n")
@@ -259,6 +256,7 @@ class ControlledBoiler(object):
         Determine the number of hot water requests from fast reacting terminal units
         """
         if self._debug: print(f"[{pd.Timestamp.now()}] Starting to determine hotter water requests for fast reacting units.\n")
+
         quick_consumers = self.hw_consumers.loc[~self.hw_consumers.loc[:, "htm"], :]
         threshold_position = 95.0
 
@@ -267,6 +265,10 @@ class ControlledBoiler(object):
 
             # get valve status
             consumer_vlv = unit["ctrl_vlv"]
+            if consumer_vlv is None:
+                print(f"{unit['t_unit']} does not have a control valve!\n")
+                continue
+
             vlv_val = self.get_point_value(consumer_vlv)
             vlv_timestamp = pd.Timestamp.now()
 
@@ -319,8 +321,10 @@ class ControlledBoiler(object):
         dfs_htm = self.records_to_df(point_records)
 
         req_count = 0
-        for key in dfs_htm.keys():
+        for i, unit in slow_consumers.iterrows():
             htm_req = 0
+            key = str(unit['ctrl_vlv']['bacnet_instance'])
+
             df = dfs_htm[key]
             time_diff = df.index.to_series().diff()
             on_instances = time_diff[df > threshold_position]
@@ -333,9 +337,8 @@ class ControlledBoiler(object):
                     htm_req = 1
 
             # add information to hw_consumers container
-            key_id = self.hw_consumers.loc[:, "bacnet_instance"].astype(str) == key
-            self.hw_consumers.loc[key_id, "last_req_val"] = htm_req
-            self.hw_consumers.loc[key_id, "last_req_time"] = pd.Timestamp.now()
+            self.hw_consumers.loc[unit.name, "last_req_val"] = htm_req
+            self.hw_consumers.loc[unit.name, "last_req_time"] = pd.Timestamp.now()
 
         return req_count
 
@@ -529,9 +532,6 @@ class ControlledBoiler(object):
                 filter ( ?subtype != ?point_type )
                 }}
             }}"""
-
-        if debug:
-            import pdb; pdb.set_trace()
 
         # execute the query
         if self._debug and self._verbose: print(f"[{pd.Timestamp.now()}] Retrieving {brick_point_class} BACnet information for {equip_name}\n")

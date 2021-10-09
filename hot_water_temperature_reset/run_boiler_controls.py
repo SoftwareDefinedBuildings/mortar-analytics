@@ -128,7 +128,7 @@ class Boiler_Controller:
         return df_hw_consumers.loc[part_hw_sys, :]
 
 
-    def clean_metadata(df_hw_consumers):
+    def clean_metadata(self, df_hw_consumers):
         """
         Cleans metadata dataframe to have unique hot water consumers with
         most specific classes associated to other relevant information.
