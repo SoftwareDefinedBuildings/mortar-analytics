@@ -70,6 +70,134 @@ def clean_metadata(df_hw_consumers):
     return df_hw_consumers
 
 
+def return_class_entity(g, entity):
+    """
+    Return the most specific class for an entity
+    """
+
+    term_query = """ SELECT * WHERE {
+        ?entity rdf:type/rdfs:subClassOf? ?entity_class
+
+            FILTER NOT EXISTS {
+                ?subtype ^a ?entity ;
+                    (rdfs:subClassOf|^owl:equivalentClass)* ?entity_class .
+                filter ( ?subtype != ?entity_class )
+                }
+    }
+    """
+
+    term_query_result = g.query(term_query, initBindings={"entity": entity})
+    df_term_query_result = pd.DataFrame(term_query_result, columns=[str(s) for s in term_query_result.vars])
+
+    entity_class = df_term_query_result["entity_class"].unique()
+
+    if len(entity_class) > 1:
+        entity_class = g.get_most_specific_class(entity_class)
+
+    if len(entity_class) == 0:
+        return None
+
+    return entity_class[0]
+
+
+def query_hw_consumer_valve(g, hw_consumer):
+    """
+    Retrieve control valves for hot water consumers
+    """
+
+    vlv_query = """SELECT DISTINCT * WHERE {
+        VALUES ?ctrl_equip { brick:Position_Sensor brick:Valve_Command }
+        ?point_name     rdf:type                        ?ctrl_equip .
+        ?point_name     brick:isPointOf                 ?t_unit .
+        ?point_name     brick:bacnetPoint               ?bacnet_id .
+        ?point_name     brick:hasUnit?                  ?val_unit .
+        ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
+        ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
+        ?bacnet_id      brick:accessedAt                ?bacnet_net .
+        ?bacnet_net     dbc:connstring                  ?bacnet_addr .
+
+        FILTER NOT EXISTS {
+            VALUES ?exclude_tags {tag:Reversing tag:Damper }
+            ?point_name brick:hasTag ?exclude_tags.
+        }
+    }"""
+
+    q_result = g.query(vlv_query, initBindings={"t_unit": hw_consumer})
+    df = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
+
+    # Verify that unit is a qudt unit
+    #TODO figure out why brick:hasUnit is returning other objects
+    qudt_units = df["val_unit"].str.contains("qudt.org")
+    if any(qudt_units):
+        df = df.loc[qudt_units, :]
+    else:
+        df.loc[~qudt_units, "val_unit"] = None
+
+    df = df.drop_duplicates(subset=['point_name']).reset_index(drop=True)
+
+    if df.shape[0] == 0:
+        return None
+
+    return dict(df.loc[df.index[0]])
+
+
+def query_hw_mode_status(g, hw_consumer):
+    """
+    Get mode status (heating or cooling) of hot water consumers
+    """
+
+    mode_query = """SELECT DISTINCT * WHERE {
+        VALUES ?mode_status {
+            brick:Heating_Start_Stop_Status brick:Heating_Enable_Command
+            brick:Cooling_Start_Stop_Status brick:Cooling_Enable_Command
+            }
+
+        ?point_name     rdf:type                        ?mode_status .
+        ?point_name     brick:isPointOf                 ?t_unit .
+        ?point_name     brick:bacnetPoint               ?bacnet_id .
+        ?point_name     brick:hasUnit?                  ?val_unit .
+        ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
+        ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
+        ?bacnet_id      brick:accessedAt                ?bacnet_net .
+        ?bacnet_net     dbc:connstring                  ?bacnet_addr .
+    }"""
+
+    q_result = g.query(mode_query, initBindings={"t_unit": hw_consumer})
+    df = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
+
+    # Verify that unit is a qudt unit
+    #TODO figure out why brick:hasUnit is returning other objects
+    qudt_units = df["val_unit"].str.contains("qudt.org")
+    if any(qudt_units):
+        df = df.loc[qudt_units, :]
+    else:
+        df.loc[~qudt_units, "val_unit"] = None
+
+    status_entities = {
+        "Heating_Start_Stop_Status": True,
+        "Cooling_Start_Stop_Status": False,
+        "Heating_Enable_Command": True,
+        "Cooling_Enable_Command": False,
+    }
+
+    indicate_status = None
+    if df.shape[0] > 1:
+        for entity in status_entities:
+            mode_found = df["mode_status"].str.contains(entity)
+            if any(mode_found):
+                df = df.loc[mode_found, :]
+                if status_entities[entity]:
+                    indicate_status = 'heating'
+                else:
+                    indicate_status = 'not heating'
+    else:
+        return (None, None)
+
+    # for col in df.columns: print(col, df[col].unique(), '\n')
+
+    return (dict(df.loc[df.index[0]]), indicate_status)
+
+
 
 if __name__ == "__main__":
 
@@ -116,6 +244,34 @@ if __name__ == "__main__":
     # query hot water consumers and clean metadata
     df_hw_consumers = query_hw_consumers(g)
     df_hw_consumers = clean_metadata(df_hw_consumers)
+
+    # test ID of entity class
+    entity_class = [return_class_entity(g, t_unit) for t_unit in df_hw_consumers["t_unit"]]
+    df_hw_consumers.loc[:, "equip_type"] = entity_class
+
+    # test ID of consumer's control valve
+    control_vlvs = [query_hw_consumer_valve(g, t_unit) for t_unit in df_hw_consumers["t_unit"]]
+    df_hw_consumers.loc[:, "ctrl_vlv"] = control_vlvs
+
+
+    # test ID of consumer's mode status
+    mode_status = [query_hw_mode_status(g, t_unit) for t_unit in df_hw_consumers["t_unit"]]
+    df_hw_consumers.loc[:, "mode_status"] = [m[0] for m in mode_status]
+    df_hw_consumers.loc[:, "mode_status_type"] = [m[1] for m in mode_status]
+
+
+    # test ID of terminal response
+    htm_terminals  = [
+        "TABS_Panel", "ESS_Panel",
+        "Thermally_Activated_Building_System_Panel",
+        "Embedded_Surface_System_Panel",
+        ]
+
+    df_hw_consumers.loc[:, "htm"] = df_hw_consumers["equip_type"].str.contains('|'.join(htm_terminals))
+    df_hw_consumers.loc[df_hw_consumers["htm"].isin([None]), "htm"] = False
+    df_vlv = pd.DataFrame.from_records(list(df_hw_consumers.loc[df_hw_consumers["htm"], "ctrl_vlv"]))
+
+
 
     # Define boilers to be controlled
     boilers2control = []

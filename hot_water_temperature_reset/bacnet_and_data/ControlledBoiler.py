@@ -51,8 +51,8 @@ class ControlledBoiler(object):
 
         self.get_boiler_points()
         self.get_boiler_limits()
+        self.process_hw_consumers()
         self.check_for_htm_terminals()
-        self.clean_hw_consumers()
 
 
     def get_boiler_points(self):
@@ -95,18 +95,11 @@ class ControlledBoiler(object):
         """
 
         # identify high thermal mass terminal units
-        terminal_short_name = self.hw_consumers.loc[:, "equip_type"].str.split("#").str[1]
-        unique_terminals = terminal_short_name.unique()
-        htm = [unit in self.htm_terminals for unit in unique_terminals]
-        self.hw_consumers.loc[:, "htm"] = terminal_short_name.isin(unique_terminals[htm])
+        self.hw_consumers.loc[:, "htm"] = self.hw_consumers["equip_type"].str.contains('|'.join(self.htm_terminals))
+        self.hw_consumers.loc[self.hw_consumers["htm"].isin([None]), "htm"] = False
 
-        # return valves to use in determination of hot water requests
-        htm_vlvs = []
-        if any(htm):
-            for htm_cons in unique_terminals[htm]:
-                htm_vlvs.append(self._query_htm_valves(htm_cons))
+        df_vlvs = pd.DataFrame.from_records(list(self.hw_consumers.loc[self.hw_consumers["htm"], "ctrl_vlv"]))
 
-        df_vlvs = pd.concat(htm_vlvs)
         self.htm =  bms.SaveBacnetPoints(df_vlvs, self.bacpypesAPP, timezone='US/Pacific', 
                                             prj_folder='./', data_file='rad_vlv_measurements'
                                             )
@@ -134,17 +127,35 @@ class ControlledBoiler(object):
     def stop_htm_data_archive(self):
         self.htm_archive_loop = False
 
-    def clean_hw_consumers(self):
+
+    def process_hw_consumers(self):
         """
-        Make sure metadata only include unique terminal units
-        and initiate last 2 columns for holding last request values and time
+        Process hot water consumers to their type, controlling valve bacnet info,
+        mode status bacnet info, and verify they are unique.
+        Also, initiate last 2 columns for holding last request values and time
         """
 
+        # return hot water consumers most specific entity class
+        terminal_units = self.hw_consumers["t_unit"]
+        entity_class = [self.return_class_entity(t_unit) for t_unit in terminal_units]
+        self.hw_consumers.loc[:, "equip_type"] = entity_class
+
+        # return hot water consumers controlling valve
+        control_vlvs = [self.query_hw_consumer_valve(t_unit) for t_unit in terminal_units]
+        self.hw_consumers.loc[:, "ctrl_vlv"] = control_vlvs
+
+        # return hot water consumers mode status
+        mode_status = [self.query_hw_mode_status(t_unit) for t_unit in terminal_units]
+        self.hw_consumers.loc[:, "mode_status"] = [m[0] for m in mode_status]
+        self.hw_consumers.loc[:, "mode_status_type"] = [m[1] for m in mode_status]
+
+        # verify that hot water consumers are unique
         self.hw_consumers = self.hw_consumers.drop_duplicates(subset=["t_unit", "equip_type"]).reset_index(drop=True)
 
         # initiate containers
         self.hw_consumers.loc[:, "last_req_val"] = None
         self.hw_consumers.loc[:, "last_req_time"] = None
+        self.hw_consumers.loc[:, "last_req_mode"] = None
 
 
     def get_boiler_setpoint(self):
@@ -253,37 +264,38 @@ class ControlledBoiler(object):
 
         req_count = 0
         for i, unit in quick_consumers.iterrows():
-            consumer_vlv = self._query_hw_consumer_valve(unit["t_unit"])
-            consumer_heat_mode = self._query_hw_mode_status(unit["t_unit"])
 
-            if consumer_vlv.shape[0] > 1:
-                if "TABs_Radiant_Loop" in unit["t_unit"]:
-                    # TODO Figure out how to return only the heating valve
-                    consumer_vlv = consumer_vlv.loc[["RASELVLV1_2-O" in pt for pt in consumer_vlv["point_name"]], :]
-                if "Heat_Pump" in unit["equip_type"]:
-                    consumer_vlv = consumer_vlv.loc[["ISOVLV" in pt for pt in consumer_vlv["point_name"]], :]
-            elif consumer_vlv.shape[0] == 0:
-                print(f"{unit['t_unit']} does not have a control valve!\n")
-                continue
-
-            # get valve values
-            vlv_val = self.get_point_value(consumer_vlv.iloc[0])
+            # get valve status
+            consumer_vlv = unit["ctrl_vlv"]
+            vlv_val = self.get_point_value(consumer_vlv)
             vlv_timestamp = pd.Timestamp.now()
+
+            # get mode status if available
+            consumer_heat_mode = False
+            if unit["mode_status"] is None:
+                consumer_heat_mode = True
+            else:
+                cur_mode_status = self.get_point_value(unit["mode_status"])
+
+                if unit["mode_status_type"] == "heating":
+                    if cur_mode_status > 0:
+                        consumer_heat_mode = True
 
             if self._debug and self._verbose: print(vlv_val, " | ", unit["t_unit"], " | ")
 
             # save to container
             self.hw_consumers.loc[unit.name, "last_req_val"] = vlv_val
             self.hw_consumers.loc[unit.name, "last_req_time"] = vlv_timestamp
+            self.hw_consumers.loc[unit.name, "last_req_mode"] = consumer_heat_mode
 
             if consumer_heat_mode:
                 if isinstance(vlv_val, str):
                     if vlv_val.lower() in ['active', 'on']:
                         req_count+=1
-                elif "binary" in str(consumer_vlv.iloc[0]["bacnet_type"]):
+                elif "binary" in str(consumer_vlv["bacnet_type"]):
                     if vlv_val == 1:
                         req_count+=1
-                elif "PERCENT" in str(consumer_vlv.iloc[0]["val_unit"]) or vlv_val > 1:
+                elif "PERCENT" in str(consumer_vlv["val_unit"]) or vlv_val > 1:
                     if vlv_val > threshold_position:
                         req_count+=1
                 else:
@@ -367,70 +379,10 @@ class ControlledBoiler(object):
         self.bacpypesAPP.write_prop(bacnet_args)
 
 
-    def _query_htm_valves(self, htm_terminal):
-        """
-        Retrieve radiant manifold valve metadata and bacnet information
-        """
-
-        vlv_query = f"""SELECT DISTINCT * WHERE {{
-            ?point_name     rdf:type                        brick:Valve_Command .
-            ?point_name     brick:isPointOf                 ?rad_panel .
-            ?rad_panel      rdf:type/rdfs:subClassOf?       brick:{htm_terminal} .
-            ?point_name     brick:hasUnit                   ?unit .
-            ?point_name     brick:bacnetPoint               ?bacnet_id .
-            ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
-            ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
-            ?bacnet_id      brick:accessedAt                ?bacnet_net .
-            ?bacnet_net     dbc:connstring                  ?bacnet_addr .
-        }}
-        """
-
-        q_result = self.brick_model.query(vlv_query)
-        df = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
-
-        # drop duplicate valve commands
-        df = df.drop_duplicates(subset=['point_name']).reset_index(drop=True)
-
-        return df
-
-
-    def _query_hw_consumer_valve(self, hw_consumer):
+    def query_hw_consumer_valve(self, hw_consumer):
         """
         Retrieve control valves for hot water consumers
         """
-
-        vlv_query2 = """SELECT DISTINCT * WHERE {
-            ?point_name     rdf:type                        brick:Position_Sensor .
-            ?point_name     brick:isPointOf                 ?t_unit .
-            ?point_name     brick:bacnetPoint               ?bacnet_id .
-            ?point_name     brick:hasUnit?                  ?val_unit .
-            ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
-            ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
-            ?bacnet_id      brick:accessedAt                ?bacnet_net .
-            ?bacnet_net     dbc:connstring                  ?bacnet_addr .
-        }"""
-
-        vlv_query3 = """SELECT DISTINCT * WHERE {
-            ?point_name     rdf:type                        brick:Valve_Command .
-            ?point_name     brick:isPointOf                 ?t_unit .
-            ?point_name     brick:bacnetPoint               ?bacnet_id .
-            ?point_name     brick:hasUnit?                  ?val_unit .
-            ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
-            ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
-            ?bacnet_id      brick:accessedAt                ?bacnet_net .
-            ?bacnet_net     dbc:connstring                  ?bacnet_addr .
-        }"""
-
-        vlv_query4 = """SELECT DISTINCT * WHERE {
-            { ?point_name rdf:type  brick:Position_Sensor } UNION { ?point_name rdf:type  brick:Valve_Command }.
-            ?point_name     brick:isPointOf                 ?t_unit .
-            ?point_name     brick:bacnetPoint               ?bacnet_id .
-            ?point_name     brick:hasUnit?                  ?val_unit .
-            ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
-            ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
-            ?bacnet_id      brick:accessedAt                ?bacnet_net .
-            ?bacnet_net     dbc:connstring                  ?bacnet_addr .
-        }"""
 
         vlv_query = """SELECT DISTINCT * WHERE {
             VALUES ?ctrl_equip { brick:Position_Sensor brick:Valve_Command }
@@ -438,21 +390,121 @@ class ControlledBoiler(object):
             ?point_name     brick:isPointOf                 ?t_unit .
             ?point_name     brick:bacnetPoint               ?bacnet_id .
             ?point_name     brick:hasUnit?                  ?val_unit .
+            ?val_unit       rdf:type                        ?units_type .
+            ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
+            ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
+            ?bacnet_id      brick:accessedAt                ?bacnet_net .
+            ?bacnet_net     dbc:connstring                  ?bacnet_addr .
+
+            FILTER NOT EXISTS {
+                VALUES ?exclude_tags {tag:Reversing tag:Damper }
+                ?point_name brick:hasTag ?exclude_tags.
+            }
+        }"""
+
+        q_result = self.brick_model.query(vlv_query, initBindings={"t_unit": hw_consumer})
+        df = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
+
+        # Verify that unit is a qudt unit
+        #TODO figure out why brick:hasUnit is returning other objects
+        qudt_units = df["val_unit"].str.contains("qudt.org")
+        if any(qudt_units):
+            df = df.loc[qudt_units, :]
+        else:
+            df.loc[~qudt_units, "val_unit"] = None
+
+        df = df.drop_duplicates(subset=['point_name']).reset_index(drop=True)
+
+        if df.shape[0] == 0:
+            return None
+
+        return dict(df.loc[df.index[0]])
+
+    def query_hw_mode_status(self, hw_consumer):
+        """
+        Get mode status (heating or cooling) of hot water consumers
+        """
+
+        mode_query = """SELECT DISTINCT * WHERE {
+            VALUES ?mode_status {
+                brick:Heating_Start_Stop_Status brick:Heating_Enable_Command
+                brick:Cooling_Start_Stop_Status brick:Cooling_Enable_Command
+                }
+
+            ?point_name     rdf:type                        ?mode_status .
+            ?point_name     brick:isPointOf                 ?t_unit .
+            ?point_name     brick:bacnetPoint               ?bacnet_id .
+            ?point_name     brick:hasUnit?                  ?val_unit .
             ?bacnet_id      brick:hasBacnetDeviceInstance   ?bacnet_instance .
             ?bacnet_id      brick:hasBacnetDeviceType       ?bacnet_type .
             ?bacnet_id      brick:accessedAt                ?bacnet_net .
             ?bacnet_net     dbc:connstring                  ?bacnet_addr .
         }"""
 
-        q_result = self.brick_model.query(vlv_query, initBindings={"t_unit": hw_consumer})
+        q_result = self.brick_model.query(mode_query, initBindings={"t_unit": hw_consumer})
         df = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
 
-        df = df.drop_duplicates(subset=['point_name']).reset_index(drop=True)
+        # Verify that unit is a qudt unit
+        #TODO figure out why brick:hasUnit is returning other objects
+        qudt_units = df["val_unit"].str.contains("qudt.org")
+        if any(qudt_units):
+            df = df.loc[qudt_units, :]
+        else:
+            df.loc[~qudt_units, "val_unit"] = None
 
-        return df
+        status_entities = {
+            "Heating_Start_Stop_Status": True,
+            "Cooling_Start_Stop_Status": False,
+            "Heating_Enable_Command": True,
+            "Cooling_Enable_Command": False,
+        }
+
+        indicate_status = None
+        if df.shape[0] > 1:
+            for entity in status_entities:
+                mode_found = df["mode_status"].str.contains(entity)
+                if any(mode_found):
+                    df = df.loc[mode_found, :]
+                    if status_entities[entity]:
+                        indicate_status = 'heating'
+                    else:
+                        indicate_status = 'not heating'
+        else:
+            return (None, None)
+
+        # for col in df.columns: print(col, df[col].unique(), '\n')
+
+        return (dict(df.loc[df.index[0]]), indicate_status)
 
 
-    ## return: {'num_requests': int, 'max_temperature_setpoint': float (F), 'min_temperature_setpoint': float (F), 'current_setpoint': float (F)}
+    def return_class_entity(self, entity):
+        """
+        Return the most specific class for an entity
+        """
+
+        term_query = """ SELECT * WHERE {
+            ?entity rdf:type/rdfs:subClassOf? ?entity_class
+
+                FILTER NOT EXISTS {
+                    ?subtype ^a ?entity ;
+                        (rdfs:subClassOf|^owl:equivalentClass)* ?entity_class .
+                    filter ( ?subtype != ?entity_class )
+                    }
+        }
+        """
+
+        term_query_result = self.brick_model.query(term_query, initBindings={"entity": entity})
+        df_term_query_result = pd.DataFrame(term_query_result, columns=[str(s) for s in term_query_result.vars])
+
+        entity_class = df_term_query_result["entity_class"].unique()
+
+        if len(entity_class) > 1:
+            entity_class = self.brick_model.get_most_specific_class(entity_class)
+
+        if len(entity_class) == 0:
+            return None
+
+        return entity_class[0]
 
 
     def return_equipment_points(self, brick_point_class, equip_name):
