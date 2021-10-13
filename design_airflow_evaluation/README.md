@@ -1,0 +1,1 @@
+﻿# Savings Potential of Using Designed Zone Minimum Ventilation RequirementsPerform a comparison between the implemented zones' minimum ventilation requirements and the designed zone ventilation requirements as found from architecture drawings.

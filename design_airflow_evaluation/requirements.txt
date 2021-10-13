@@ -1,0 +1,5 @@
+pymortar
+pandas
+numpy
+brickschema
+brickschema[reasonable]
