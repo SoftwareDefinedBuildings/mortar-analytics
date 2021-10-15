@@ -54,7 +54,7 @@ print(qualify_resp.sites)
 
 
 avail_sites = ['hart', 'gha_ics']
-airflow_sensors = client.data_sparql(airflow_query, source=avail_sites)
+airflow_sensors = client.data_sparql(airflow_query, sites=avail_sites)
 
 airflow_view = client.sparql(airflow_query, sites=avail_sites)
 airflow_view = airflow_view.reset_index(drop=True)
