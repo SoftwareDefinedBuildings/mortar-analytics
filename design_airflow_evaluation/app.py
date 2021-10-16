@@ -54,7 +54,7 @@ print(qualify_resp.sites)
 
 
 avail_sites = ['hart', 'gha_ics']
-airflow_sensors = client.data_sparql(airflow_query, sites=avail_sites)
+airflow_sensors = client.data_sparql(airflow_query, sites=avail_sites, memsize=4e9)
 
 airflow_view = client.sparql(airflow_query, sites=avail_sites)
 airflow_view = airflow_view.reset_index(drop=True)
@@ -175,6 +175,72 @@ def find_min_max_design_airflow(sensor, airflow_view, vav_details):
     return vav_max_cfm, vav_min_cfm
 
 
+def identify_bldg_occupancy(vav_airflow, occ_hrs=[7,18]):
+
+    mil_time = vav_airflow["time"].dt.hour + (vav_airflow["time"].dt.minute)/60.0
+
+    weekend = vav_airflow["time"].dt.day_name().isin(["Saturday", "Sunday"])
+    occupied = (mil_time >= occ_hrs[0]) & (mil_time <= occ_hrs[1]) & ~weekend
+
+    vav_airflow.loc[:, "occupied_hour"] = occupied
+    vav_airflow.loc[:, "weekend"] = weekend
+
+    return vav_airflow
+
+
+def boxplot_params(values, q=[0.25, 0.50, 0.75]):
+    """
+    Calculate boxplot parameters from the given 
+    values pandas data series 
+    """
+
+    quants = []
+    for q_num in q:
+        quants.append(values.quantile(q=q_num))
+
+    iqr = quants[-1] - quants[0]
+
+    upper = quants[-1] + 1.5*iqr
+    lower = quants[0] - 1.5*iqr
+
+    # make sure lower and upper are less than data min max values.
+    qmax = values.quantile(q=1.00)
+    qmin = values.quantile(q=0.00)
+
+    upper = min(upper, qmax)
+    lower = max(lower, qmin)
+
+    quants.insert(0, lower)
+    quants.append(upper)
+
+    return tuple(quants)
+
+
+def one_zone_boxplot_set(df, value_col):
+    """
+    Calculate boxplot parameters for one zone.
+    Boxplot 1: all data
+    Boxplot 2: occupancy hours
+    Boxplot 3: unoccupied hours including all weekend
+    Boxplot 4: Only weekends
+    """
+
+    overall = boxplot_params(df.loc[:, value_col])
+    occupied = boxplot_params(df.loc[df["occupied_hour"], value_col])
+    unoccupied = boxplot_params(df.loc[~df["occupied_hour"], value_col])
+    weekend = boxplot_params(df.loc[df["weekend"], value_col])
+
+    boxplots = {
+        "overall": overall,
+        "occupied": occupied,
+        "unoccupied": unoccupied,
+        "weekend": weekend,
+    }
+
+    return boxplots
+
+
+
 def plot_airflow_dat(vav_airflow, vav_max_cfm, vav_min_cfm):
 
     dat_src = ColumnDataSource(vav_airflow)
@@ -191,21 +257,32 @@ def plot_airflow_dat(vav_airflow, vav_max_cfm, vav_min_cfm):
 
     p.step('time', 'value', source=dat_src, line_width=2)
 
-    plot_name = '{}-timeseries.html'.format(vav_airflow.iloc[0]["id"])
+    plot_name = '{}-airflow_timeseries.html'.format(vav_airflow.iloc[0]["id"].split("#")[1])
     output_file(join('./', plot_name))
     save(p)
 
     return p
 
 
+
 # unique_sensors = airflow_view["airflow"].unique()
 unique_sensors = airflow_sensors.data["id"].unique()
 
+boxplots = dict()
 for sensor in unique_sensors:
     vav_max_cfm, vav_min_cfm = find_min_max_design_airflow(sensor, airflow_view, vav_details)
     vav_airflow = airflow_sensors.data.loc[airflow_sensors.data["id"].isin([sensor]), :]
 
+    vav_airflow = identify_bldg_occupancy(vav_airflow, occ_hrs=[7,18])
+
+    sensor_id = sensor.split("#")[1]
+    boxplots[sensor_id] = one_zone_boxplot_set(vav_airflow, "value")
+
+    boxplots[sensor_id].update({
+        "maximum_airflow": vav_max_cfm,
+        "minimum_airflow": vav_min_cfm
+    })
+
+
+
     # plot = plot_airflow_dat(vav_airflow, vav_max_cfm, vav_min_cfm)
-
-
-
