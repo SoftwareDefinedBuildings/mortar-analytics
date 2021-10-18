@@ -354,7 +354,7 @@ if __name__ == "__main__":
 
     # time interval for to download data
     start = dtutil.dt2ts(dtutil.strptime_tz("9-10-2021", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("10-20-2021", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("11-15-2021", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
