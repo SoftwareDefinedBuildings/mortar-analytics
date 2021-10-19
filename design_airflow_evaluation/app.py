@@ -7,10 +7,10 @@ from os.path import join
 
 # create plots
 from bokeh.palettes import Spectral8, Category20
-from bokeh.io import show, save, output_file
+from bokeh.io import show, save, output_file, export_png
 from bokeh.layouts import column
 from bokeh.plotting import figure, show
-from bokeh.models import ColumnDataSource, RangeTool, LinearAxis, Range1d, BoxAnnotation, Legend
+from bokeh.models import ColumnDataSource, RangeTool, LinearAxis, Range1d, BoxAnnotation, Legend, Span
 
 
 MORTAR_URL = "https://beta-api.mortardata.org"
@@ -143,7 +143,7 @@ def find_min_max_design_airflow(sensor, airflow_view, vav_details):
     sensor_metadata = airflow_view.loc[airflow_view["airflow"].str.contains(sensor), :]
 
     if sensor_metadata.empty:
-        return None
+        return None, None
 
     if sensor_metadata.shape[0] > 1:
         import pdb; pdb.set_trace()
@@ -157,17 +157,21 @@ def find_min_max_design_airflow(sensor, airflow_view, vav_details):
     # get maximum and minimum cfm
     zone_num = zone.split("#")[1].lower().replace("rm", "")
 
-    room_exists = vav_details[site]["vav2room"]["room"].str.contains(zone_num)
+    room_exists = vav_details[site]["vav2room"]["room"].str.lower().str.contains(zone_num)
+
+    if not any(room_exists):
+        return None, None
+
     room_found = vav_details[site]["vav2room"].loc[room_exists, :]
 
     if room_found.empty:
-        return None
+        return None, None
 
     vav_details_exists = vav_details[site]["vav_design"]["vav"].str.contains(room_found.iloc[0]["vav"])
     vav_details_found = vav_details[site]["vav_design"].loc[vav_details_exists, :]
 
     if vav_details_found.empty:
-        return None
+        return None, None
 
     vav_max_cfm = vav_details_found.iloc[0]["maximum cfm"]
     vav_min_cfm = vav_details_found.iloc[0]["minimum cfm"]
@@ -264,6 +268,61 @@ def plot_airflow_dat(vav_airflow, vav_max_cfm, vav_min_cfm):
     return p
 
 
+def plot_one_boxplot(one_boxplot_params, plt=None, boxplot_idx=None, boxplot_color="#0080ff"):
+
+    if plt is None:
+        ini_plot = figure(tools="", toolbar_location=None)
+        boxplot_idx = 1
+
+    box_width = 0.5
+
+    # plot whiskers
+    plt.segment(boxplot_idx, one_boxplot_params[-1], boxplot_idx, one_boxplot_params[3], line_width=2, line_color="black")
+    plt.segment(boxplot_idx, one_boxplot_params[0], boxplot_idx, one_boxplot_params[1], line_width=2, line_color="black")
+
+    # plot boxes
+    plt.vbar(boxplot_idx, box_width, one_boxplot_params[2], one_boxplot_params[3], fill_color=boxplot_color, line_color="black")
+    plt.vbar(boxplot_idx, box_width, one_boxplot_params[1], one_boxplot_params[2], fill_color=boxplot_color, line_color="black")
+
+    # plot median bar
+    plt.rect(boxplot_idx, one_boxplot_params[2], box_width, 0.02, line_width=3, line_color="black")
+
+    # # plot whisker endpoints
+    # plt.rect(boxplot_idx, one_boxplot_params[0], 0.2, 0.01, line_color="black")
+    # plt.rect(boxplot_idx, one_boxplot_params[-1], 0.2, 0.01, line_color="black")
+
+    plt.xgrid.grid_line_color = None
+    plt.ygrid.grid_line_color = "white"
+    plt.grid.grid_line_width = 2
+    plt.xaxis.major_label_text_font_size="16px"
+
+    return plt
+
+
+def plot_boxplot_zone_set(boxplot_set, plot_name):
+
+    boxplot_cols = ["overall", "occupied", "unoccupied", "weekend"]
+    boxplot_colors = ["#4da6ff", "#4dffa6", "#ff4d4d", "#ffa64d"]
+
+    plt = figure(x_range=boxplot_cols, height=250, title=plot_name,
+            toolbar_location=None)
+
+    upper_design_airflow = Span(location=boxplot_set["maximum_airflow"], dimension="width",
+    line_color="gray", line_dash="dashed", line_width=3)
+    lower_design_airflow = Span(location=boxplot_set["minimum_airflow"], dimension="width",
+    line_color="gray", line_dash="dashed", line_width=3)
+
+    plt.renderers.extend([upper_design_airflow, lower_design_airflow])
+
+    for idx, col in enumerate(boxplot_cols):
+        plt = plot_one_boxplot(boxplot_set[col], plt=plt, boxplot_idx=idx+0.5, boxplot_color=boxplot_colors[idx])
+
+    return plt
+
+
+def plot_boxplots_from_df(boxplot_df):
+    pass
+
 
 # unique_sensors = airflow_view["airflow"].unique()
 unique_sensors = airflow_sensors.data["id"].unique()
@@ -282,6 +341,43 @@ for sensor in unique_sensors:
         "maximum_airflow": vav_max_cfm,
         "minimum_airflow": vav_min_cfm
     })
+
+# convert boxplot dict to dataframe
+boxplot_df = pd.DataFrame.from_dict(boxplots).transpose()
+
+
+one_boxplot = boxplot_df.iloc[0]["overall"]
+boxplot = plot_one_boxplot(one_boxplot)
+
+output_file(join('./', 'boxplot_test.html'))
+save(boxplot)
+
+
+
+dev_threshold = 0.25
+need_att = []
+for idx, boxplot_set in boxplot_df.iterrows():
+
+    plot_name = boxplot_set.name
+    p = plot_boxplot_zone_set(boxplot_set, plot_name=plot_name)
+
+    if boxplot_set["minimum_airflow"] is not None:
+        airflow_dev = boxplot_set["occupied"] / boxplot_set["minimum_airflow"] - 1
+        bad = airflow_dev[2] > dev_threshold
+    else:
+        airflow_dev = boxplot_set["occupied"] / boxplot_set["unoccupied"][2] - 1
+        bad = airflow_dev[2] < dev_threshold
+
+    if bad:
+        folder = join("./", "figures", "needs_attention")
+        need_att.append(idx)
+    else:
+        folder  = join("./", "figures", "reasonable")
+
+
+    filename= join(folder, f"{plot_name}.html")
+    output_file(join(filename))
+    save(p)
 
 
 
