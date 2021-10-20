@@ -13,137 +13,146 @@ from bokeh.plotting import figure, show
 from bokeh.models import ColumnDataSource, RangeTool, LinearAxis, Range1d, BoxAnnotation, Legend, Span
 
 
-MORTAR_URL = "https://beta-api.mortardata.org"
-
-# connect to Mortar client
-client = pymortar.Client(MORTAR_URL)
-
-# initialize container for query information
-query = dict()
-
-# airflow_query = """SELECT ?airflow ?vav WHERE { 
-#     ?airflow    rdf:type                    brick:Supply_Air_Flow_Sensor .
-#     ?vav        rdf:type                    brick:VAV .
-#     ?vav        brick:hasPoint              ?airflow .
-# }"""
-
-airflow_query = """SELECT ?airflow ?vav ?zone WHERE {
-    ?airflow    a                   brick:Supply_Air_Flow_Sensor .
-    ?vav        a                   brick:VAV .
-    ?airflow    brick:isPointOf     ?vav .
-    ?vav        brick:feeds         ?zone .
-    ?zone       a                   brick:HVAC_Zone .
-}"""
-
-# find sites that qualify for the app
-qualify_resp = client.qualify({"measurement": airflow_query})
-
-
-query["query"] = dict()
-query["airflow"] = airflow_query
-
-print("running on {0} sites".format(len(qualify_resp.sites)))
-print(qualify_resp.sites)
-
-
-################
-################
-### Fetch
-################
-################
-
-
-avail_sites = ['hart', 'gha_ics']
-airflow_sensors = client.data_sparql(airflow_query, sites=avail_sites, memsize=4e9)
-
-airflow_view = client.sparql(airflow_query, sites=avail_sites)
-airflow_view = airflow_view.reset_index(drop=True)
-
-# select_sites = airflow_view["airflow"].str.contains("|".join(avail_sites).upper())
-# af_select_sites = airflow_view.loc[select_sites, :].sort_values(by=["airflow"]).reset_index(drop=True)
-
-
-# data_found = []
-# for i, row in airflow_view.iterrows():
-#     df = client.data_uris(row["airflow"])
-
-#     if df._data.empty:
-#         data_found.append(False)
-#     else:
-#         data_found.append(True)
-
-
-################
-################
-### Clean Data
-################
-################
-
-# sort by id and time
-airflow_sensors._data = airflow_sensors._data.sort_values(["id", "time"])
-
-
-################
-################
-### Retreive Brick Model
-################
-################
-# # get building brick graphs
-# hart_model_file = './brick_models/hart_model.ttl'
-# gha_model_file = './brick_models/gha_model.ttl'
-
-# g_hart = client.get_graph('hart')
-# g_gha = client.get_graph('gha_ics')
-
-# g = brickschema.Graph(brick_version="1.2")
-# g_gha_brick = g.parse(g_gha, format="ttl")
-
-# g = brickschema.Graph(brick_version="1.2")
-# g_hart_brick = g.parse(io.BytesIO(g_hart), format="turtle")
-
-# # save graphs
-# with open(hart_model_file, 'wb') as f:
-#     f.write(g_hart)
-
-# with open(gha_model_file, 'wb') as f:
-#     f.write(g_gha)
-
-
-# g = brickschema.Graph(brick_version="1.2")
-# g_hart_model = g.load_file(hart_model_file)
-
-# g = brickschema.Graph(brick_version="1.2")
-# g_gha_model = g.load_file(gha_model_file, format="ttl")
-
-# get building details
-hart_vav2room_file = './bldg_details/hart vav to room schedule.csv'
-hart_vav_design_file = './bldg_details/hart vav schedule.csv'
-
-hart_vav2room = pd.read_csv(hart_vav2room_file)
-hart_vav_design = pd.read_csv(hart_vav_design_file)
-
-vav_details = {
-    "hart": {
-        "vav2room": hart_vav2room,
-        "vav_design": hart_vav_design,
-        },
-    }
-
-################
-################
-### Evaluate Zone Airflow
-################
-################
-
-def find_min_max_design_airflow(sensor, airflow_view, vav_details):
+def _query_and_qualify(MORTAR_URL):
     """
-    Retrieve minimum and maximum design airflow rates from vav box
+    Build query and return sites with VAV airflow sensors
+
+    Parameters
+    ----------
+    MORTAR_URL: endpoint for mortar database
+
+    Returns
+    -------
+    query: dictionary containing airflow query
+    client: pymortar connection client
     """
+    # connect to Mortar client
+    client = pymortar.Client(MORTAR_URL)
+
+    # initialize container for query information
+    query = dict()
+
+    airflow_query = """SELECT ?airflow ?vav ?zone WHERE {
+        ?airflow    a                   brick:Supply_Air_Flow_Sensor .
+        ?vav        a                   brick:VAV .
+        ?airflow    brick:isPointOf     ?vav .
+        ?vav        brick:feeds         ?zone .
+        ?zone       a                   brick:HVAC_Zone .
+    }"""
+
+    # find sites that qualify for the app
+    qualify_resp = client.qualify({"measurement": airflow_query})
+
+    query["query"] = dict()
+    query["airflow"] = airflow_query
+
+    print("running on {0} sites".format(len(qualify_resp.sites)))
+    print(qualify_resp.sites)
+
+    return query, client
+
+
+def _fetch(query, client, sites=None):
+    """
+    Fetch query metadata results and query resulting sensor datastreams
+
+    Parameters
+    ----------
+    query: dictionary containing airflow query
+    client: pymortar connection client
+
+    Returns
+    -------
+    airflow_view: query metadata results
+    airflow_sensors: pymortar Dataset for the sites specified
+    """
+
+    airflow_query = query["airflow"]
+
+    airflow_view = client.sparql(airflow_query, sites=sites)
+    airflow_sensors = client.data_sparql(airflow_query, sites=sites, memsize=4e9)
+
+    return airflow_view, airflow_sensors
+
+
+def _clean(airflow_view, airflow_sensors):
+    """
+    Clean query metadata results and pymortar Dataset
+
+    Parameters
+    ----------
+    airflow_view: query metadata results
+    airflow_sensors: pymortar Dataset for the sites specified
+
+    Returns
+    -------
+    airflow_view: query metadata results
+    airflow_sensors: pymortar Dataset for the sites specified
+    """
+
+    # reset index in metadata view
+    airflow_view = airflow_view.reset_index(drop=True)
+
+    # sort by id and time
+    airflow_sensors._data = airflow_sensors._data.sort_values(["id", "time"])
+
+    return airflow_view, airflow_sensors
+
+
+def _retreive_bldg_details(sites, vav2room_files, vav_design_files):
+    """
+    Retrieve vav system details to enable detailed analysis.
+
+    Parameters
+    ----------
+    sites: site(s) to do detailed analysis
+    vav2room_files: path to file(s) that maps room to vav equipment
+    vav_design_files: path to file(s) that maps vav to vav design parameters
+
+    Returns
+    -------
+    vav_details: dictionary with vav details of each specified site
+    """
+
+    vav_details = dict()
+    for s, vr, vd in zip(sites, vav2room_files, vav_design_files):
+        # get building details
+        vav2room = pd.read_csv(vr)
+        vav_design = pd.read_csv(vd)
+
+        one_site = {
+            s: {
+                "vav2room": vav2room,
+                "vav_design": vav_design,
+                },
+            }
+        vav_details.update(one_site)
+
+    return vav_details
+
+
+def find_vav_design_details(sensor, airflow_view, vav_details):
+    """
+    Retrieve minimum and maximum design airflow rates from vav box.
+
+    Parameters
+    ----------
+    sensor: airflow sensor URI name
+    airflow_view: query metadata results
+    vav_details: dictionary with vav details of each specified site
+
+    Returns
+    -------
+    vav_design: dictionary with detailed vav parameters
+    """
+
+    # initiate dictionary to hold vav details
+    vav_design = dict()
 
     sensor_metadata = airflow_view.loc[airflow_view["airflow"].str.contains(sensor), :]
 
     if sensor_metadata.empty:
-        return None, None
+        return vav_design
 
     if sensor_metadata.shape[0] > 1:
         import pdb; pdb.set_trace()
@@ -151,6 +160,15 @@ def find_min_max_design_airflow(sensor, airflow_view, vav_details):
     site = sensor_metadata.iloc[0]["site"]
     zone = sensor_metadata.iloc[0]["zone"]
     vav = sensor_metadata.iloc[0]["vav"]
+
+    vav_design[site] = {
+        "vav": None,
+        "ahu": None,
+        "vav_maximum_airflow": None,
+        "vav_minimum_airflow": None,
+        "ahu_maximum_airflow": None,
+        "ahu_minimum_airflow": None,
+    }
 
     print(site, "|", vav, "|", zone, "\n")
 
@@ -160,26 +178,41 @@ def find_min_max_design_airflow(sensor, airflow_view, vav_details):
     room_exists = vav_details[site]["vav2room"]["room"].str.lower().str.contains(zone_num)
 
     if not any(room_exists):
-        return None, None
+        return vav_design
 
     room_found = vav_details[site]["vav2room"].loc[room_exists, :]
 
     if room_found.empty:
-        return None, None
+        return vav_design
 
     vav_details_exists = vav_details[site]["vav_design"]["vav"].str.contains(room_found.iloc[0]["vav"])
     vav_details_found = vav_details[site]["vav_design"].loc[vav_details_exists, :]
 
     if vav_details_found.empty:
-        return None, None
+        return vav_design
 
-    vav_max_cfm = vav_details_found.iloc[0]["maximum cfm"]
-    vav_min_cfm = vav_details_found.iloc[0]["minimum cfm"]
+    # get values for each design parameter
+    for param in vav_design[site].keys():
+        param_val = vav_details_found.iloc[0][param]
+        vav_design[site].update({param: param_val})
 
-    return vav_max_cfm, vav_min_cfm
+    return vav_design
 
 
 def identify_bldg_occupancy(vav_airflow, occ_hrs=[7,18]):
+    """
+    Identify occupancy hours for the datastream downloaded
+    
+    Parameters
+    ----------
+    vav_airflow: airflow sensor data stream
+    occ_hrs: building occupancy hours [<start of occupancy>, <end of occupancy>]
+        in decimal time.
+
+    Returns
+    -------
+    vav_airflow: airflow sensor data stream with occupied_hour and weekend boolean columns
+    """
 
     mil_time = vav_airflow["time"].dt.hour + (vav_airflow["time"].dt.minute)/60.0
 
@@ -192,10 +225,21 @@ def identify_bldg_occupancy(vav_airflow, occ_hrs=[7,18]):
     return vav_airflow
 
 
-def boxplot_params(values, q=[0.25, 0.50, 0.75]):
+def boxplot_params(values, q=[0.25, 0.50, 0.75], whiskers=[0.95, 0.05]):
     """
-    Calculate boxplot parameters from the given 
-    values pandas data series 
+    Calculate quantiles for defined data e.g. parameters to create
+    boxplot.
+
+    Parameters
+    ----------
+    values: Pandas data series
+    q: quantiles to calculate
+    whiskers: upper and lower quantile for boxplot whiskers
+
+
+    Returns
+    -------
+    quants: tuple for the calculated quantiles
     """
 
     quants = []
@@ -208,8 +252,8 @@ def boxplot_params(values, q=[0.25, 0.50, 0.75]):
     lower = quants[0] - 1.5*iqr
 
     # make sure lower and upper are less than data min max values.
-    qmax = values.quantile(q=1.00)
-    qmin = values.quantile(q=0.00)
+    qmax = values.quantile(q=whiskers[0])
+    qmin = values.quantile(q=whiskers[1])
 
     upper = min(upper, qmax)
     lower = max(lower, qmin)
@@ -223,10 +267,21 @@ def boxplot_params(values, q=[0.25, 0.50, 0.75]):
 def one_zone_boxplot_set(df, value_col):
     """
     Calculate boxplot parameters for one zone.
-    Boxplot 1: all data
-    Boxplot 2: occupancy hours
-    Boxplot 3: unoccupied hours including all weekend
-    Boxplot 4: Only weekends
+
+    Parameters
+    ----------
+    df: pandas dataframe with data
+    value_col: name of column containing the values to analyze
+
+    Returns
+    -------
+    boxplots: dictionary of boxplot parameters for different
+        categories defined below.
+
+        Boxplot 1: all data
+        Boxplot 2: occupancy hours
+        Boxplot 3: unoccupied hours including all weekend
+        Boxplot 4: Only weekends
     """
 
     overall = boxplot_params(df.loc[:, value_col])
@@ -243,6 +298,46 @@ def one_zone_boxplot_set(df, value_col):
 
     return boxplots
 
+
+def calculate_quartiles(airflow_sensors, airflow_view, vav_details, occ_hrs=[7,18]):
+    """
+    Calculate quartiles for each vav airflow sensor measurements
+
+    Parameters
+    ----------
+    airflow_sensors: pymortar Dataset for the sites specified
+    airflow_view: query metadata results
+    vav_details: dictionary with vav details of each specified site
+    occ_hrs: building occupancy hours [<start of occupancy>, <end of occupancy>]
+        in decimal time.
+
+    Returns
+    -------
+    boxplot_df: pandas dataframe containing calculated quartiles for each vav airflow sensor
+    """
+
+    # unique_sensors = airflow_view["airflow"].unique()
+    unique_sensors = airflow_sensors.data["id"].unique()
+
+    boxplots = dict()
+    for sensor in unique_sensors:
+        vav_design = find_vav_design_details(sensor, airflow_view, vav_details)
+        vav_airflow = airflow_sensors.data.loc[airflow_sensors.data["id"].isin([sensor]), :]
+
+        vav_airflow = identify_bldg_occupancy(vav_airflow, occ_hrs=occ_hrs)
+
+        sensor_id = sensor.split("#")[1]
+        boxplots[sensor_id] = one_zone_boxplot_set(vav_airflow, "value")
+
+        if bool(vav_design):
+            site = list(vav_design.keys())[0]
+            boxplots[sensor_id].update({"site": site})
+            boxplots[sensor_id].update(vav_design[site])
+
+    # convert boxplot dict to dataframe
+    boxplot_df = pd.DataFrame.from_dict(boxplots).transpose()
+
+    return boxplot_df
 
 
 def plot_airflow_dat(vav_airflow, vav_max_cfm, vav_min_cfm):
@@ -304,81 +399,156 @@ def plot_boxplot_zone_set(boxplot_set, plot_name):
     boxplot_cols = ["overall", "occupied", "unoccupied", "weekend"]
     boxplot_colors = ["#4da6ff", "#4dffa6", "#ff4d4d", "#ffa64d"]
 
-    plt = figure(x_range=boxplot_cols, height=250, title=plot_name,
-            toolbar_location=None)
+    plt = figure(
+        x_range=boxplot_cols, height=250, title=plot_name,
+        toolbar_location=None
+        )
 
-    upper_design_airflow = Span(location=boxplot_set["maximum_airflow"], dimension="width",
+    max_airflow = boxplot_set["vav_maximum_airflow"]
+    min_airflow = boxplot_set["vav_minimum_airflow"]
+
+    upper_design_airflow = Span(location=max_airflow, dimension="width",
     line_color="gray", line_dash="dashed", line_width=3)
-    lower_design_airflow = Span(location=boxplot_set["minimum_airflow"], dimension="width",
+    lower_design_airflow = Span(location=min_airflow, dimension="width",
     line_color="gray", line_dash="dashed", line_width=3)
 
     plt.renderers.extend([upper_design_airflow, lower_design_airflow])
 
+    max_y = max_airflow
+    min_y = min_airflow
     for idx, col in enumerate(boxplot_cols):
-        plt = plot_one_boxplot(boxplot_set[col], plt=plt, boxplot_idx=idx+0.5, boxplot_color=boxplot_colors[idx])
+        boxplot_params = boxplot_set[col]
+        plt = plot_one_boxplot(boxplot_params, plt=plt, boxplot_idx=idx+0.5, boxplot_color=boxplot_colors[idx])
+
+        if min_airflow is not None:
+            max_y = max(max_y, max(boxplot_params))
+            min_y = min(min_y, min(boxplot_params))
+
+    if min_airflow is not None:
+        plt.y_range = Range1d(min_y, max_y)
 
     return plt
 
 
-def plot_boxplots_from_df(boxplot_df):
-    pass
+def calculate_min_airflow_deviation(boxplot_df):
+    """
+    Calculate the percentage deviation from minimum design airflow rate.
+
+    Parameters
+    ----------
+    boxplot_df: pandas dataframe containing calculated quartiles for each vav airflow sensor
+
+    Results
+    ----------
+    """
+
+    # define holding column names
+    pct_dev_col = ["median_pct_dev_from_dmin_occ", "median_pct_dev_from_dmin_unocc"]
+    abs_dev_col = ["median_abs_dev_form_dmin_occ", "median_abs_dev_form_dmin_unocc"]
+    timeframes = ["occupied", "unoccupied"]
+
+    # initialize holding columns
+    for kdx, tf in enumerate(timeframes):
+        boxplot_df.loc[:, abs_dev_col[kdx]] = None
+        boxplot_df.loc[:, pct_dev_col[kdx]] = None
+
+    for idx, sensor in boxplot_df.iterrows():
+        min_flow = sensor["vav_minimum_airflow"]
+        if min_flow is not None:
+            for jdx, tf in enumerate(timeframes):
+                abs_airflow_dev = sensor[tf] - min_flow
+                airflow_dev = sensor[tf] / min_flow - 1
+
+                # insert calculation in dataframe
+                boxplot_df.loc[idx, abs_dev_col[jdx]] = abs_airflow_dev[2]
+                boxplot_df.loc[idx, pct_dev_col[jdx]] = airflow_dev[2]
+
+    return boxplot_df
 
 
-# unique_sensors = airflow_view["airflow"].unique()
-unique_sensors = airflow_sensors.data["id"].unique()
+def _analyze(airflow_sensors, airflow_view, vav_details, occ_hrs=[6,22], dev_threshold=0.15):
+    """
+    Analyze each vav airflow sensor
+    """
+    boxplot_df = calculate_quartiles(airflow_sensors, airflow_view, vav_details, occ_hrs)
+    boxplot_df = calculate_min_airflow_deviation(boxplot_df)
 
-boxplots = dict()
-for sensor in unique_sensors:
-    vav_max_cfm, vav_min_cfm = find_min_max_design_airflow(sensor, airflow_view, vav_details)
-    vav_airflow = airflow_sensors.data.loc[airflow_sensors.data["id"].isin([sensor]), :]
+    # save spreadsheet
+    boxplot_df.sort_values(["median_pct_dev_from_dmin_occ"]).to_csv("summary_of_vav_airflow_analysis.csv")
 
-    vav_airflow = identify_bldg_occupancy(vav_airflow, occ_hrs=[7,18])
+    need_att = []
+    for idx, sensor in boxplot_df.iterrows():
 
-    sensor_id = sensor.split("#")[1]
-    boxplots[sensor_id] = one_zone_boxplot_set(vav_airflow, "value")
+        plot_name = f"{sensor.name} | Bldg. Occ = {occ_hrs}"
+        p = plot_boxplot_zone_set(sensor, plot_name=plot_name)
 
-    boxplots[sensor_id].update({
-        "maximum_airflow": vav_max_cfm,
-        "minimum_airflow": vav_min_cfm
-    })
+        airflow_dev = sensor["median_pct_dev_from_dmin_occ"]
+        if airflow_dev is not None:
+            if airflow_dev > dev_threshold:
+                subfolder = 'too high'
+                bad = True
 
-# convert boxplot dict to dataframe
-boxplot_df = pd.DataFrame.from_dict(boxplots).transpose()
+            elif airflow_dev < -1*dev_threshold:
+                subfolder = 'too low'
+                bad = True
 
+            else:
+                bad = False
 
-one_boxplot = boxplot_df.iloc[0]["overall"]
-boxplot = plot_one_boxplot(one_boxplot)
+        if bad:
+            folder = join("./", "figures", "needs_attention", subfolder)
+            need_att.append(idx)
+        else:
+            folder  = join("./", "figures", "reasonable")
 
-output_file(join('./', 'boxplot_test.html'))
-save(boxplot)
-
-
-
-dev_threshold = 0.25
-need_att = []
-for idx, boxplot_set in boxplot_df.iterrows():
-
-    plot_name = boxplot_set.name
-    p = plot_boxplot_zone_set(boxplot_set, plot_name=plot_name)
-
-    if boxplot_set["minimum_airflow"] is not None:
-        airflow_dev = boxplot_set["occupied"] / boxplot_set["minimum_airflow"] - 1
-        bad = airflow_dev[2] > dev_threshold
-    else:
-        airflow_dev = boxplot_set["occupied"] / boxplot_set["unoccupied"][2] - 1
-        bad = airflow_dev[2] < dev_threshold
-
-    if bad:
-        folder = join("./", "figures", "needs_attention")
-        need_att.append(idx)
-    else:
-        folder  = join("./", "figures", "reasonable")
+        filename= join(folder, f"{plot_name}.html")
+        output_file(join(filename))
+        save(p)
 
 
-    filename= join(folder, f"{plot_name}.html")
-    output_file(join(filename))
-    save(p)
+if __name__ == "__main__":
+
+    ################
+    ################
+    ### Query and qualify
+    ################
+    ################
+
+    MORTAR_URL = "https://beta-api.mortardata.org"
+    query, client = _query_and_qualify(MORTAR_URL)
+
+    ################
+    ################
+    ### Fetch and clean
+    ################
+    ################
+
+    avail_sites = ['hart', 'gha_ics']
+    airflow_view, airflow_sensors = _fetch(query, client, sites=avail_sites)
+    airflow_view, airflow_sensors = _clean(airflow_view, airflow_sensors)
+
+    ################
+    ################
+    ### Retreive detailed building vav system information
+    ################
+    ################
+
+    hart_vav2room_file = './bldg_details/hart vav to room schedule.csv'
+    hart_vav_design_file = './bldg_details/hart vav schedule.csv'
+
+    vav_sites = [avail_sites[0]]
+    vav2room_files = [hart_vav2room_file]
+    vav_design_files = [hart_vav_design_file]
+
+    vav_details = _retreive_bldg_details(vav_sites, vav2room_files, vav_design_files)
+
+    ################
+    ################
+    ### Analysis: Evaluate Zone Airflow
+    ################
+    ################
+
+    _analyze(airflow_sensors, airflow_view, vav_details, occ_hrs=[6,22], dev_threshold=0.15)
 
 
-
-    # plot = plot_airflow_dat(vav_airflow, vav_max_cfm, vav_min_cfm)
+        # plot = plot_airflow_dat(vav_airflow, vav_max_cfm, vav_min_cfm)
