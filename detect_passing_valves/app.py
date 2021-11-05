@@ -852,11 +852,16 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
     -------
     None
     """
+
+    # plot parametes
+    y_max = vlv_df['temp_diff'].max()
+
     # plot temperature difference vs valve position
     fig, ax = plt.subplots(figsize=(8,4.5))
     ax.set_ylabel('Temperature difference [°F]')
     ax.set_xlabel('Valve opened [%]')
     ax.set_title("Valve = {}\nEquip. = {}".format(row['vlv'], row['equip']), loc='left')
+    ax.set_ylim((0, np.ceil(y_max*1.05)))
 
     if 'color' in vlv_df.columns:
         ax.scatter(x=vlv_df['vlv_po'], y=vlv_df['temp_diff'], color = vlv_df['color'], alpha=1/3, s=10)
@@ -876,7 +881,6 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
 
     if bad_ratio is not None:
         # add ratio where presumably passing valve
-        y_max = vlv_df['temp_diff'].max()
         ax.text(.2, 0.95*y_max, "Bad ratio={:.1f}%".format(bad_ratio))
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
