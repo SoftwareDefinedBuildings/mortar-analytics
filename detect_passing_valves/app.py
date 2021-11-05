@@ -1088,7 +1088,7 @@ def print_passing_mgs(row):
     print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
 
 
-def clean_final_report(final_df):
+def clean_final_report(final_df, drop_null=True):
     """
     Clean final report and sort by greatest number of minutes that fault was detected
 
@@ -1096,27 +1096,35 @@ def clean_final_report(final_df):
     ----------
     final_df: pandas dataframe with valve metadata along with failure types detected
 
+    drop_null: boolean to drop rows where no short or long term faults exist for valves.
+
     Returns
     -------
     final_df: cleaned and sorted report
     """
     if 'long_term_fail' in final_df.columns:
-        final_df = final_df.loc[np.logical_or(~final_df['long_term_fail'].isnull(), ~final_df['short_term_fail'].isnull())]
+        if drop_null:
+            final_df = final_df.loc[np.logical_or(~final_df['long_term_fail'].isnull(), ~final_df['short_term_fail'].isnull())]
 
-        # separate data into multiple columns
-        final_df['long_term_fail_avg_minutes'] = final_df.long_term_fail.str[0]
-        final_df['long_term_fail_num_times_detected'] = final_df.long_term_fail.str[1]
-        final_df['long_term_fail_str_end_dates'] = final_df.long_term_fail.str[2]
+        if 'long_term_fail' in final_df.columns:
+            # separate data into multiple columns
+            final_df['long_term_fail_avg_minutes'] = final_df.long_term_fail.str[0]
+            final_df['long_term_fail_num_times_detected'] = final_df.long_term_fail.str[1]
+            final_df['long_term_fail_str_end_dates'] = final_df.long_term_fail.str[2]
 
-        final_df['short_term_fail_avg_minutes'] = final_df.short_term_fail.str[0]
-        final_df['short_term_fail_num_times_detected'] = final_df.short_term_fail.str[1]
-        final_df['short_term_fail_str_end_dates'] = final_df.short_term_fail.str[2]
+            # drop redundant columns
+            final_df = final_df.drop(columns=['long_term_fail'])
+
+        if 'short_term_fail' in final_df.columns:
+            final_df['short_term_fail_avg_minutes'] = final_df.short_term_fail.str[0]
+            final_df['short_term_fail_num_times_detected'] = final_df.short_term_fail.str[1]
+            final_df['short_term_fail_str_end_dates'] = final_df.short_term_fail.str[2]
+
+            # drop redundant columns
+            final_df = final_df.drop(columns=['short_term_fail'])
 
         # sort by highest value faults
         final_df = final_df.sort_values(by=['long_term_fail_avg_minutes', 'short_term_fail_avg_minutes'], ascending=False)
-
-        # drop redundant columns
-        final_df = final_df.drop(columns=['long_term_fail', 'short_term_fail'])
 
     return final_df
 
