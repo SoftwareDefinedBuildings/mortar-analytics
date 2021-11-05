@@ -690,7 +690,7 @@ def calc_long_t_diff(vlv_df):
 
     return long_t
 
-def analyze_timestamps(vlv_df, th_time, window, row=None):
+def analyze_timestamps(vlv_df, th_time, window, row=None, project_folder='./'):
     """
     Analyze timestamps and valve operation in a pandas dataframe to determine which row values 
     are th_time minutes after a changed state e.g. determine which data corresponds
@@ -707,6 +707,8 @@ def analyze_timestamps(vlv_df, th_time, window, row=None):
     window : aggregation window, in minutes, to average the raw measurement data
 
     row: Pandas series object with metadata for the specific vav valve
+
+    project_folder: name of path for the project and used to save the plot.
 
     Returns
     -------
@@ -1189,7 +1191,7 @@ def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
 
     return pass_type
 
-def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
+def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folder='./', detection_params=None):
     """
     Analyze each valve and detect for passing valves
 
@@ -1205,12 +1207,21 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
         valve operating point is malfunctioning e.g. allow enough time for residue heat to
         dissipate from the coil.
 
+    window: aggregation window, in minutes, to average the raw measurement data
+
     project_folder: name of path for the project and used to save the plots and csv data.
+
+    detection_params: dictionary of parameters that control the behavior of the application
 
     Returns
     -------
     None
     """
+
+    # update variables
+    if detection_params is not None:
+        globals().update(detection_params)
+
     # container for holding types of faults
     passing_type = dict()
 
@@ -1229,7 +1240,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./'):
         _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'))
 
     # Analyze timestamps and valve operation changes
-    vlv_df = analyze_timestamps(vlv_df, th_time, window, row=row)
+    vlv_df = analyze_timestamps(vlv_df, th_time, window, row=row, project_folder=project_folder)
 
     if vlv_df is None:
         print("'{}' in site {} has no data after analyzing \
