@@ -972,7 +972,11 @@ def density_data(dat, rescale_dat=None):
     ys: y values of the density function
     """
     #create data for density plot
-    density = gaussian_kde(dat)
+    try:
+        density = gaussian_kde(dat)
+    except:
+        print("NAs exist is airflow data. Will delete them.")
+        density = gaussian_kde(dat[~dat.isna()])
     xs = np.linspace(0, max(dat), 200)
 
     density.covariance_factor = lambda : 0.25
