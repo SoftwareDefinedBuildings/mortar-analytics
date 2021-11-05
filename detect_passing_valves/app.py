@@ -396,6 +396,7 @@ def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5):
         df = df.loc[df['air_flow'] > min_air_flow]
     else:
         # drop values outside occupancy hours
+        print("No airflow data, using explicit occupancy hours to do analysis.")
         df = occupied_hours_subset(df, occ_str, occ_end, wkend_str)
 
     return df
