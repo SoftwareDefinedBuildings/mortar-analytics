@@ -1059,16 +1059,19 @@ def find_bad_vlv_operation(vlv_df, model, window):
     #     pass_type['long_term_fail'] = (ts_days+ts_seconds)/60.0
 
     # detect long term failures
-    if any((bad_grp_count*window) > long_term_fail):
-        long_term_fail_times = bad_grp_count[(bad_grp_count*window) > long_term_fail]*window
-        if long_term_fail_times.count() > 2 or long_term_fail_times.index[-1] == vlv_df['same'].max():
+    long_term_fail_bool = (bad_grp_count*window) > long_term_fail
+    if any(long_term_fail_bool):
+        long_term_fail_times = bad_grp_count[long_term_fail_bool]*window
+        if long_term_fail_times.count() >= 1 or long_term_fail_times.index[-1] == vlv_df['same'].max():
             dates = [(bad_grp.groups[ky][0], bad_grp.groups[ky][-1]) for ky in long_term_fail_times.index]
             pass_type['long_term_fail'] = (long_term_fail_times.mean(), long_term_fail_times.count(), dates)
 
     # detect short term failures
-    if any((bad_grp_count*window) > shrt_term_fail):
-        shrt_term_fail_times = bad_grp_count[(bad_grp_count*window) > shrt_term_fail]*window
-        if shrt_term_fail_times.count() > 2:
+    bad_grp_left_over = bad_grp_count[~long_term_fail_bool]
+    short_term_fail_bool = (bad_grp_left_over*window) > shrt_term_fail
+    if any(short_term_fail_bool):
+        shrt_term_fail_times = bad_grp_left_over[short_term_fail_bool]*window
+        if shrt_term_fail_times.count() >= 2 or (shrt_term_fail_times.count() >= 1 and any(long_term_fail_bool)):
             dates = [(bad_grp.groups[ky][0], bad_grp.groups[ky][-1]) for ky in shrt_term_fail_times.index]
             pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count(), dates)
 
