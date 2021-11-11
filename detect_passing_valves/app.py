@@ -355,7 +355,7 @@ def _clean_vav(fetch_resp_vav, row):
     vav_df['temp_diff'] = vav_df['dnstream_ta'] - vav_df['upstream_ta']
 
     # drop na
-    vav_df = vav_df.dropna()
+    # vav_df = vav_df.dropna()
 
     # drop values where vav supply air is less than ahu supply air
     vav_df = vav_df[vav_df['temp_diff'] >= 0]
@@ -363,7 +363,7 @@ def _clean_vav(fetch_resp_vav, row):
     return vav_df
 
 
-def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5):
+def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=False):
     """
     Drop data rows from dataframe for timeseries that are during unoccupied hours. Uses airflow
     data if available else it uses building occupancy hours.
@@ -394,6 +394,8 @@ def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5):
             min_air_flow = np.percentile(xs, 5)
 
         df = df.loc[df['air_flow'] > min_air_flow]
+    elif 'air_flow' not in df.columns and air_flow_required:
+        df = pd.DataFrame()
     else:
         # drop values outside occupancy hours
         print("No airflow data, using explicit occupancy hours to do analysis.")
@@ -510,7 +512,7 @@ def _clean_ahu(fetch_resp_ahu, row):
     ahu_df['temp_diff'] = ahu_df['dnstream_ta'] - ahu_df['upstream_ta']
 
     # drop na
-    ahu_df = ahu_df.dropna()
+    # ahu_df = ahu_df.dropna()
 
     # drop values where vav supply air is less than ahu supply air
     #ahu_df = ahu_df[ahu_df['temp_diff'] >= 0]
@@ -750,8 +752,11 @@ def analyze_timestamps(vlv_df, th_time, window, row=None, project_folder='./'):
     if row is not None:
         _name = "{}-{}-{}_dat".format(row['site'], row['equip'], row['vlv'])
 
-        full_path = rename_existing(join(project_folder, "csv_data", _name + '.csv'), idx=0, row=row)
+        full_path = rename_existing(join(project_folder, csv_folder, _name + '.csv'), idx=0, row=row)
         vlv_df.to_csv(full_path)
+
+    # drop rows of data where valve position is unknown
+    vlv_df = vlv_df.dropna(subset=['vlv_po'])
 
     return vlv_df
 
@@ -1260,7 +1265,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
         return passing_type
 
     # drop data that occurs during unoccupied hours
-    vlv_df = drop_unoccupied_dat(vlv_df, occ_str=6, occ_end=18, wkend_str=5)
+    vlv_df = drop_unoccupied_dat(vlv_df, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=air_flow_required)
 
     if vlv_df.empty:
         print("'{}' in site {} has no data after hours of \
