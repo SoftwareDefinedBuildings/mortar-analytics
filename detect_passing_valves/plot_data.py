@@ -201,7 +201,7 @@ def plot_good_valves(vlv_dat_folder, sample_size, fig_folder):
 if __name__ == '__main__':
 
     # define data sources
-    project_folder = join('./', 'external_analysis', 'lg_4hr_shrt_1hr_updated_no_off_period')
+    project_folder = join('./', 'external_analysis', 'bldg_trc_rs', 'lg_4hr_shrt_1hr_Nov9_no_off_period')
     vlv_dat_folder = join(project_folder, "csv_data")
 
     # fault data plots
