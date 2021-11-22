@@ -1202,7 +1202,7 @@ def analyze_only_open(vlv_df, row, th_bad_vlv, project_folder):
         print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vlv'], row['site']))
         pass_type['non_responsive_fail'] = round(long_to['50%'] - th_bad_vlv, 2)
         folder = join(project_folder, bad_folder)
-        import pdb; pdb.set_trace()
+        vlv_df.loc[:, 'good_oper_cat'] = False
     else:
         vlv_df.loc[:, 'good_oper_cat'] = True
         folder = join(project_folder, good_folder)
