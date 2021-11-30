@@ -157,7 +157,7 @@ def exclude_time_interval(df, int_str, int_end):
 if __name__ == '__main__':
     # NOTE: HW plant off from August 31 to October 7 2021
     dat_folder = join('./', 'external_data', 'bldg_trc_rs')
-    project_folder = join('./', 'external_analysis', 'bldg_trc_rs', 'lg_4hr_shrt_1hr_Nov9_no_off_period')
+    project_folder = join('./', 'external_analysis', 'bldg_trc_rs', 'lg_4hr_shrt_1hr_Nov22_no_off_period')
 
     csv_list = [
         join(dat_folder, 'zone trends, September 2021.csv'),
@@ -165,6 +165,7 @@ if __name__ == '__main__':
         join(dat_folder, 'Schoellkopf zone trends 20211103_A.csv'),
         join(dat_folder, 'Schoellkopf zone trends 20211103_B.csv'),
         join(dat_folder, 'Schoellkopf zone trends 20211109.csv'),
+        join(dat_folder, 'Schoellkopf zone trends Nov2021 downloaded 20211122.csv')
     ]
 
 
