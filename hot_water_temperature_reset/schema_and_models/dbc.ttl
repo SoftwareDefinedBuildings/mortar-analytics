@@ -221,8 +221,6 @@ dbc:East_Air_Duct a brick:Ventilation_Air_System ;
 
 dbc:Hot_Water_Loop a brick:Hot_Water_System ;
     brick:hasPart dbc:Boiler_Fulton_PHW1000,
-        dbc:HWP1,
-        dbc:HWP2,
         dbc:HWP5,
         dbc:HWP6 .
 
@@ -967,6 +965,14 @@ dbc:CWP1 a brick:Pump ;
     brick:hasPoint dbc:Field_Bus1.CW_Pump_1.Analog_Inputs.AI-0,
         dbc:Field_Bus1.CW_Pump_1.Analog_Inputs.AI-1,
         dbc:Field_Bus1.CW_Pump_1.Analog_Outputs.AO-0,
+        dbc:Field_Bus1.Plant_Boilers.HWP1Off_Delay,
+        dbc:Field_Bus1.Plant_Boilers.SHWP-ROT,
+        dbc:Field_Bus1.Plant_Boilers.SHWP-RUNNING,
+        dbc:Field_Bus1.Plant_Boilers.SHWP1-OUTSTATE,
+        dbc:Field_Bus1.Plant_Boilers.SHWP1-RUNTIME,
+        dbc:Field_Bus1.Plant_Boilers.SHWPID-STATE,
+        dbc:Field_Bus1.Plant_Boilers.SHWPROTATE-OUTSTATE,
+        dbc:Field_Bus1.Plant_Boilers.SHWPSTG-SP,
         dbc:Field_Bus1.Plant_CoolingTower.CWP-OUTSTATE,
         dbc:Field_Bus1.Plant_CoolingTower.CWP1-C,
         dbc:Field_Bus1.Plant_CoolingTower.CWP1-O,
@@ -982,6 +988,13 @@ dbc:CWP2 a brick:Pump ;
     brick:hasPoint dbc:Field_Bus1.CW_Pump_2.Analog_Inputs.AI-0,
         dbc:Field_Bus1.CW_Pump_2.Analog_Inputs.AI-1,
         dbc:Field_Bus1.CW_Pump_2.Analog_Outputs.AO-0,
+        dbc:Field_Bus1.Plant_Boilers.SHWP-ROT,
+        dbc:Field_Bus1.Plant_Boilers.SHWP-RUNNING,
+        dbc:Field_Bus1.Plant_Boilers.SHWP2-OUTSTATE,
+        dbc:Field_Bus1.Plant_Boilers.SHWP2-RUNTIME,
+        dbc:Field_Bus1.Plant_Boilers.SHWPID-STATE,
+        dbc:Field_Bus1.Plant_Boilers.SHWPROTATE-OUTSTATE,
+        dbc:Field_Bus1.Plant_Boilers.SHWPSTG-SP,
         dbc:Field_Bus1.Plant_CoolingTower.CWP-OUTSTATE,
         dbc:Field_Bus1.Plant_CoolingTower.CWP2-C,
         dbc:Field_Bus1.Plant_CoolingTower.CWP2-O,
@@ -3032,15 +3045,15 @@ dbc:Field_Bus1.BrowerRadiant2East.ZN3-T a brick:Zone_Air_Temperature_Sensor ;
 
 dbc:Field_Bus1.BrowerRadiant2East.ZONE2-2-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001443 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant2East.ZONE2-5-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3002956 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant2East.ZONE2-6-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001442 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant2East.Zn2-2DevForSlabHiLimit a brick:Max_Limit ;
     brick:bacnetPoint dbc:id-3002525 ;
@@ -3260,11 +3273,11 @@ dbc:Field_Bus1.BrowerRadiant2West.ZN2-4_EFF_SLAB-SP a brick:Embedded_Temperature
 
 dbc:Field_Bus1.BrowerRadiant2West.ZONE2-3-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3002253 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant2West.ZONE2-4-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3002248 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant2West.Zone_1_Control_SL-MINOFF a brick:Time_Setpoint ;
     brick:bacnetPoint dbc:id-3002255 ;
@@ -3407,15 +3420,15 @@ dbc:Field_Bus1.BrowerRadiant3East.ZN3-T a brick:Zone_Air_Temperature_Sensor ;
 
 dbc:Field_Bus1.BrowerRadiant3East.ZONE3-2-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001942 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant3East.ZONE3-5-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3002954 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant3East.ZONE3-6-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001444 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant3East.Zn3-2DevForSlabHiLimit a brick:Max_Limit ;
     brick:bacnetPoint dbc:id-3002550 ;
@@ -3594,11 +3607,11 @@ dbc:Field_Bus1.BrowerRadiant3West.ZN3-4_HEAT_UNOCC_SP a brick:Unoccupied_Heating
 
 dbc:Field_Bus1.BrowerRadiant3West.ZONE3-3-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001440 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant3West.ZONE3-4-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001439 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant3West.Zn3-3DevForSlabHiLimit a brick:Max_Limit ;
     brick:bacnetPoint dbc:id-3002540 ;
@@ -3781,15 +3794,15 @@ dbc:Field_Bus1.BrowerRadiant4East.ZN4-6_HEAT_UNOCC_SP a brick:Unoccupied_Heating
 
 dbc:Field_Bus1.BrowerRadiant4East.ZONE4-2-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001447 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant4East.ZONE4-5-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001445 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant4East.ZONE4-6-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001446 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant4East.Zn4-2DevForSlabHiLimit a brick:Max_Limit ;
     brick:bacnetPoint dbc:id-3002575 ;
@@ -3968,11 +3981,11 @@ dbc:Field_Bus1.BrowerRadiant4West.ZN4-4_HEAT_UNOCC_SP a brick:Unoccupied_Heating
 
 dbc:Field_Bus1.BrowerRadiant4West.ZONE4-3-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3001441 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant4West.ZONE4-4-C a brick:Valve_Command ;
     brick:bacnetPoint dbc:id-3002958 ;
-    brick:hasUnit unit:PERCENT .
+    brick:hasUnit unit:UNITLESS .
 
 dbc:Field_Bus1.BrowerRadiant4West.Zn4-3DevForSlabHiLimit a brick:Max_Limit ;
     brick:bacnetPoint dbc:id-3002565 ;
@@ -5185,25 +5198,6 @@ dbc:Field_Bus1.Radiant_Pump_4.Analog_Inputs.AI-1 a brick:Speed_Status ;
 dbc:Field_Bus1.Radiant_Pump_4.Analog_Outputs.AO-0 a brick:Speed_Status ;
     brick:bacnetPoint dbc:id-3003266 ;
     brick:hasUnit unit:PERCENT .
-
-dbc:HWP1 a brick:Pump ;
-    brick:hasPoint dbc:Field_Bus1.Plant_Boilers.HWP1Off_Delay,
-        dbc:Field_Bus1.Plant_Boilers.SHWP-ROT,
-        dbc:Field_Bus1.Plant_Boilers.SHWP-RUNNING,
-        dbc:Field_Bus1.Plant_Boilers.SHWP1-OUTSTATE,
-        dbc:Field_Bus1.Plant_Boilers.SHWP1-RUNTIME,
-        dbc:Field_Bus1.Plant_Boilers.SHWPID-STATE,
-        dbc:Field_Bus1.Plant_Boilers.SHWPROTATE-OUTSTATE,
-        dbc:Field_Bus1.Plant_Boilers.SHWPSTG-SP .
-
-dbc:HWP2 a brick:Pump ;
-    brick:hasPoint dbc:Field_Bus1.Plant_Boilers.SHWP-ROT,
-        dbc:Field_Bus1.Plant_Boilers.SHWP-RUNNING,
-        dbc:Field_Bus1.Plant_Boilers.SHWP2-OUTSTATE,
-        dbc:Field_Bus1.Plant_Boilers.SHWP2-RUNTIME,
-        dbc:Field_Bus1.Plant_Boilers.SHWPID-STATE,
-        dbc:Field_Bus1.Plant_Boilers.SHWPROTATE-OUTSTATE,
-        dbc:Field_Bus1.Plant_Boilers.SHWPSTG-SP .
 
 dbc:HWP3 a brick:Pump ;
     brick:hasPoint dbc:Field_Bus1.Plant_RadiantLoop.HWP3-C,

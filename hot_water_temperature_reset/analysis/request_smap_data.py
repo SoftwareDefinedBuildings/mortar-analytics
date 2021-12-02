@@ -354,7 +354,7 @@ if __name__ == "__main__":
 
     # time interval for to download data
     start = dtutil.dt2ts(dtutil.strptime_tz("9-10-2021", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("10-10-2021", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("12-15-2021", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
@@ -483,4 +483,22 @@ if __name__ == "__main__":
     # create plot
     fig_file = join(plot_folder, "hydronic_plant_pumps.html")
     pump_status_plots = plot_multiple_entities(pump_points_to_download, pump_data, start, end, fig_file, exclude_str=["Analog"])
-    import pdb; pdb.set_trace()
+
+    #############################
+    ##### AHU discharge temps
+    #############################
+    ahu_dchrg = ["brick:Discharge_Air_Temperature_Sensor"]
+    ahu_metadata = search_for_entities(g, "brick:AHU", ahu_dchrg, relationship="brick:hasPoint")
+
+    df_ahu = []
+    for t_unit in ahu_metadata["entity"].unique():
+        df_ahu.append(return_entity_points(g, t_unit, ahu_dchrg))
+
+    df_ahu = pd.concat(df_ahu).reset_index(drop=True)
+    df_ahu["bacnet_instance"] = df_ahu["bacnet_instance"].astype(int).astype(str)
+
+    ahu_points_to_download, ahu_data = get_data_from_smap(df_ahu, paths, smap_client, start, end)
+
+    # create plots
+    fig_file = join(plot_folder, "ahu_discharge_temps.html")
+    dischrg_temps_plots = plot_multiple_entities(ahu_points_to_download, ahu_data, start, end, fig_file)
