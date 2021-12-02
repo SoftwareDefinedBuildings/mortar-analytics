@@ -35,6 +35,8 @@ class ControlledBoiler(object):
             "Hot_Water_Supply_Temperature_Sensor": None,
             "Return_Water_Temperature_Sensor": None,
             "Supply_Water_Temperature_Setpoint": None,
+            "Hot_Water_Supply_Temperature_High_Reset_Setpoint": None,
+            "Hot_Water_Supply_Temperature_Low_Reset_Setpoint": None,
             "High_Setpoint_Limit": None,
             "Low_Setpoint_Limit": None,
             "Enable_Command": None,
@@ -165,7 +167,7 @@ class ControlledBoiler(object):
 
     def get_boiler_status(self):
         """
-        Retreive boiler maximum temperature setpoint
+        Retreive boiler enable status
         """
 
         return self.get_point_value(self.boiler_points["Enable_Command"])
@@ -222,9 +224,16 @@ class ControlledBoiler(object):
         return req_count
 
 
-    def write_new_boiler_setpoint(self, new_value, priority=13):
+    def write_new_boiler_setpoint(self, new_value, priority=13, direction='down'):
 
-        self.write_point_value(self.boiler_points["Supply_Water_Temperature_Setpoint"], new_value, priority)
+        if direction == 'down':
+            # write low setpoint first
+            self.write_point_value(self.boiler_points["Hot_Water_Supply_Temperature_Low_Reset_Setpoint"], new_value, priority)
+            self.write_point_value(self.boiler_points["Hot_Water_Supply_Temperature_High_Reset_Setpoint"], new_value, priority)
+        else:
+            # write high setpoint first
+            self.write_point_value(self.boiler_points["Hot_Water_Supply_Temperature_High_Reset_Setpoint"], new_value, priority)
+            self.write_point_value(self.boiler_points["Hot_Water_Supply_Temperature_Low_Reset_Setpoint"], new_value, priority)
 
 
     def test_num_request(self):
