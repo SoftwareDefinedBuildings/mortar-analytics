@@ -181,8 +181,8 @@ class Boiler_Controller:
         f.close()
 
 
-    def send_new_setpoint_to_boiler(self, new_boiler_setpoint):
-        degF_boiler_setpoint = self.convert_K_to_degF(new_boiler_setpoint)
+    def send_new_setpoint_to_boiler(self, new_boiler_setpoint, priority, direction):
+        degF_boiler_setpoint = round(self.convert_K_to_degF(new_boiler_setpoint), 1)
 
         # check that new boiler setpoint is within limits
         boiler_max_sp = self.bldg_boilers[0].get_max_temp_setpoint()
@@ -193,7 +193,7 @@ class Boiler_Controller:
         elif degF_boiler_setpoint < boiler_min_sp:
             degF_boiler_setpoint = boiler_min_sp
 
-        self.bldg_boilers[0].write_new_boiler_setpoint(degF_boiler_setpoint)
+        self.bldg_boilers[0].write_new_boiler_setpoint(degF_boiler_setpoint, priority, direction)
 
 
     def schedule_tasks(self):
@@ -270,10 +270,12 @@ class Boiler_Controller:
         while True:
             print("current time == {}".format(self.current_time))
             boiler_values = self.get_current_state()
+            current_boiler_sp = boiler_values.get('current_boiler_setpoint')
 
             #TODO: When closing the loop, simulated boiler status to boiler_values.get('boiler_status')
 
-            pumps_enabled = self.simulate_boiler_status(self.sim_boiler_status)
+            # pumps_enabled = self.simulate_boiler_status(self.sim_boiler_status)
+            pumps_enabled = boiler_values.get('boiler_status')
             if pumps_enabled:
                 start = self.current_time
                 end = self.current_time + self._model_update_rate
@@ -288,13 +290,20 @@ class Boiler_Controller:
                 self.boiler.simulate(start, end, inputs, options=self.model_options)
                 self.current_time = self.current_time + self._model_update_rate
 
-            latest_boiler_setpoint = self.boiler.get('TPlaHotWatSupSet')[0]
+            latest_boiler_setpoint = round(self.boiler.get('TPlaHotWatSupSet')[0], 2)
+            print(f"[{pd.Timestamp.now()}] Current Boiler Status = {pumps_enabled}")
             print(f"[{pd.Timestamp.now()}] new hot water setpoint {latest_boiler_setpoint} K ({self.convert_K_to_degF(latest_boiler_setpoint)} degF)")
             self.save_new_setpoint_file(latest_boiler_setpoint)
 
 
             # return latest_boiler_setpoint <<<---- CARLOS: use this to generate setpoint 
-            ## TODO: self.set_boiler_setpoint(latest_boiler_setpoint (F)) 
+            ## TODO: self.set_boiler_setpoint(latest_boiler_setpoint (F))
+            if latest_boiler_setpoint > current_boiler_sp:
+                direction = 'up'
+            else:
+                direction = 'down'
+
+            self.send_new_setpoint_to_boiler(latest_boiler_setpoint, priority=13, direction=direction)
 
             await asyncio.sleep(self._model_update_rate)
 
