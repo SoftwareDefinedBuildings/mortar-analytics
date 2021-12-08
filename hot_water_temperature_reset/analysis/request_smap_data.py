@@ -376,7 +376,7 @@ if __name__ == "__main__":
 
     # time interval for to download data
     start = dtutil.dt2ts(dtutil.strptime_tz("9-10-2021", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("12-15-2021", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("01-31-2022", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
@@ -527,3 +527,28 @@ if __name__ == "__main__":
     # create plots
     fig_file = join(plot_folder, "ahu_discharge_temps.html")
     dischrg_temps_plots = plot_multiple_entities(ahu_points_to_download, ahu_data, start, end, fig_file)
+
+    #############################
+    ##### Heat pump heating start and stop status
+    #############################
+    hp_status = ["brick:Heating_Start_Stop_Status", "brick:On_Off_Command"]
+    hp_metadata = search_for_entities(g, "brick:Water_Source_Heat_Pump", hp_status, relationship="brick:hasPoint")
+
+    df_asset = []
+    for ind_asset in hp_metadata["entity"].unique():
+        df_asset.append(return_entity_points(g, ind_asset, hp_status))
+
+    df_asset = pd.concat(df_asset).reset_index(drop=True)
+    df_asset["bacnet_instance"] = df_asset["bacnet_instance"].astype(int).astype(str)
+
+    # filter
+    hp_sf_bool = df_asset["point_name"].str.contains("SF-C")
+    hp_heat_status_bool = df_asset["req_point"].str.contains("Heating_Start_Stop_Status")
+    filter_bool = np.logical_or(hp_sf_bool, hp_heat_status_bool)
+    df_asset = df_asset.loc[filter_bool, :]
+
+    hp_points_to_download, hp_data = get_data_from_smap(df_asset, paths, smap_client, start, end)
+
+    # create plots
+    fig_file = join(plot_folder, "hp_heating_status.html")
+    hp_status_plots = plot_multiple_entities(hp_points_to_download, hp_data, start, end, fig_file)
