@@ -363,7 +363,7 @@ def _clean_vav(fetch_resp_vav, row):
     return vav_df
 
 
-def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=False):
+def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=False, af_accu_factor=0.5):
     """
     Drop data rows from dataframe for timeseries that are during unoccupied hours. Uses airflow
     data if available else it uses building occupancy hours.
@@ -378,20 +378,39 @@ def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5, air_flow_require
 
     wkend_str: int number indicating start of weekend. 5 indicates Saturday and 6 indicates Sunday
 
+    air_flow_required: boolean indicating if airflow rate measurements are required in the analysis
+
+    af_accu_factor: float number indicating the degree of airflow rate measurement accuracy e.g.
+        a 1 represent highly accurate airflow rate sensor measurement and 0 highly inaccurate measurement.
+        Default to 0.5.
+
     Returns
     -------
     df: Pandas dataframe with data values during building occupancy hours
     """
 
+
     if 'air_flow' in df.columns:
         # drop values where there is no air flow
         xs, ys = density_data(df['air_flow'], rescale_dat=df['temp_diff'])
         min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
+        max_idx = return_extreme_points(ys, type_of_extreme='max', sort=False)
 
         if min_idx is not None:
-            min_air_flow = xs[min_idx[0]]
+            low_air_flow = xs[min_idx[0]]
         else:
-            min_air_flow = np.percentile(xs, 5)
+            low_air_flow = np.percentile(xs, 5)
+
+        if max_idx is not None:
+            zero_air_flow = xs[max_idx[0]]
+        else:
+            zero_air_flow = 0
+
+        # take into account the accuracy of the airflow rate measurement if known
+        if af_accu_factor is not None:
+            min_air_flow = (1-af_accu_factor)*(low_air_flow-zero_air_flow) + zero_air_flow
+        else:
+            min_air_flow = low_air_flow
 
         df = df.loc[df['air_flow'] > min_air_flow]
     elif 'air_flow' not in df.columns and air_flow_required:
