@@ -4,6 +4,7 @@ import yaml
 import numpy as np
 import asyncio
 import brickschema
+import logging, sys
 
 import bacnet_and_data.readWriteProperty as BACpypesAPP
 from bacnet_and_data.ControlledBoiler import ControlledBoiler as Boiler
@@ -19,6 +20,19 @@ import pandas as pd
 ## TODO: logging functions
 ## TODO: set initial setpoint to minimum setpoint --> currently in boiler CDL -> t&R block; not exposed. ask michael
 
+# Setup logging
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+c_handler = logging.StreamHandler(sys.stdout)
+f_handler = logging.FileHandler('brick_enabled_cdl_controller.log')
+
+logger.addHandler(c_handler)
+logger.addHandler(f_handler)
+
+
 # debugging setting
 _debug = 1
 
@@ -31,6 +45,7 @@ class Boiler_Controller:
 
         self.fmu_file = self.config.get('fmu_file')
         self.boiler = load_fmu(self.fmu_file)
+        self.prev_calc_boiler_setpoint = None
 
         self.model_options = self.boiler.simulate_options()
         self.model_options['initialize'] = True
@@ -86,18 +101,20 @@ class Boiler_Controller:
                 )
         self.boiler.simulate(0, 30, inputs, options=self.model_options)
         self.model_options['initialize'] = False
-        print(self.boiler.get('TPlaHotWatSupSet'))
+        latest_boiler_setpoint = round(self.boiler.get('TPlaHotWatSupSet')[0], 2)
+        self.prev_calc_boiler_setpoint = latest_boiler_setpoint
+        logger.info(f"[{pd.Timestamp.now()}] Initialized boiler setpoint {latest_boiler_setpoint} K ({self.convert_K_to_degF(latest_boiler_setpoint)} degF)")
         self.current_time = 30
 
 
     def load_brick_model(self):
-        if _debug: print(f"[{pd.Timestamp.now()}] Loading existing, pre-expanded building Brick model.\n")
+        if _debug: logger.info(f"[{pd.Timestamp.now()}] Loading existing, pre-expanded building Brick model.\n")
         g = brickschema.Graph()
         self.brick_model = g.load_file(self.brick_file)
 
 
     def initialize_bacnet_comm(self):
-        if _debug: print(f"\n[{pd.Timestamp.now()}] Setting up communication with BACnet network.\n")
+        if _debug: logger.info(f"[{pd.Timestamp.now()}] Setting up communication with BACnet network.\n")
         self.access_bacnet = BACpypesAPP.Init(self.bacnet_ini_file)
 
 
@@ -115,7 +132,7 @@ class Boiler_Controller:
             ?t_unit     rdf:type/rdfs:subClassOf?   ?t_type .
         }
         """
-        if _debug: print(f"[{pd.Timestamp.now()}] Retrieving hot water consumers for each boiler.\n")
+        if _debug: logger.info(f"[{pd.Timestamp.now()}] Retrieving hot water consumers for each boiler.\n")
 
         q_result = self.brick_model.query(hw_consumers_query)
         df_hw_consumers = pd.DataFrame(q_result, columns=[str(s) for s in q_result.vars])
@@ -143,7 +160,7 @@ class Boiler_Controller:
 
 
     def initialize_bldg_boilers(self):
-        if _debug: print(f"[{pd.Timestamp.now()}] Identifying each boiler's hot water consumers.\n")
+        if _debug: logger.info(f"[{pd.Timestamp.now()}] Identifying each boiler's hot water consumers.\n")
         hw_consumers = self.query_hw_consumers()
         self.hw_consumers = self.clean_metadata(hw_consumers)
 
@@ -154,7 +171,7 @@ class Boiler_Controller:
             boiler_consumers = self.hw_consumers.loc[boiler_consumers, :]
             boiler2control.append(Boiler(boiler, boiler_consumers, self.brick_model, BACpypesAPP))
 
-            if _debug: print(f"[{pd.Timestamp.now()}] Setup for {boiler} ({b+1} of {len(unique_boilers)}) is finished\n")
+            if _debug: logger.info(f"[{pd.Timestamp.now()}] Setup for {boiler} ({b+1} of {len(unique_boilers)}) is finished\n")
 
         self.bldg_boilers = boiler2control
 
@@ -202,7 +219,7 @@ class Boiler_Controller:
 
     async def _update_state(self):
         while True:
-            print(f"[{pd.Timestamp.now()}] Controller tick ...")
+            logger.info(f"[{pd.Timestamp.now()}] Controller tick ...")
             await asyncio.sleep(60)
 
     def get_current_state(self): 
@@ -258,8 +275,8 @@ class Boiler_Controller:
 
 
         # save enable
-        print(f"[{pd.Timestamp.now()}] Current Simulated Boiler Status ==  {new_status}")
-        print(f"[{pd.Timestamp.now()}] Switching to {not new_status} at {self.switch_boiler_time}")
+        logger.info(f"[{pd.Timestamp.now()}] Current Simulated Boiler Status ==  {new_status}")
+        logger.info(f"[{pd.Timestamp.now()}] Switching to {not new_status} at {self.switch_boiler_time}")
         self.sim_boiler_status = new_status
         self.save_sim_boiler_status(new_status)
 
@@ -268,7 +285,7 @@ class Boiler_Controller:
 
     async def _periodic_advance_time(self):
         while True:
-            print("current time == {}".format(self.current_time))
+            logger.info(f"[{pd.Timestamp.now()}] current time == {self.current_time}")
             boiler_values = self.get_current_state()
             current_boiler_sp = boiler_values.get('current_boiler_setpoint')
 
@@ -289,10 +306,15 @@ class Boiler_Controller:
                     )
                 self.boiler.simulate(start, end, inputs, options=self.model_options)
                 self.current_time = self.current_time + self._model_update_rate
+                latest_boiler_setpoint = round(self.boiler.get('TPlaHotWatSupSet')[0], 2)
+                self.prev_calc_boiler_setpoint = latest_boiler_setpoint
+            else:
+                logger.info(f"[{pd.Timestamp.now()}] Boiler is disabled will use last setpoint= {self.prev_calc_boiler_setpoint}")
+                latest_boiler_setpoint = self.prev_calc_boiler_setpoint
 
-            latest_boiler_setpoint = round(self.boiler.get('TPlaHotWatSupSet')[0], 2)
-            print(f"[{pd.Timestamp.now()}] Current Boiler Status = {pumps_enabled}")
-            print(f"[{pd.Timestamp.now()}] new hot water setpoint {latest_boiler_setpoint} K ({self.convert_K_to_degF(latest_boiler_setpoint)} degF)")
+
+            logger.info(f"[{pd.Timestamp.now()}] Current Boiler Status = {pumps_enabled}")
+            logger.info(f"[{pd.Timestamp.now()}] new hot water setpoint {latest_boiler_setpoint} K ({self.convert_K_to_degF(latest_boiler_setpoint)} degF)")
             self.save_new_setpoint_file(latest_boiler_setpoint)
 
 
@@ -303,7 +325,16 @@ class Boiler_Controller:
             else:
                 direction = 'down'
 
+            logger.info(f"[{pd.Timestamp.now()}] Sending new setpoint to boiler ({self.convert_K_to_degF(latest_boiler_setpoint)})deg F at priority 13 and direction= {direction}")
             self.send_new_setpoint_to_boiler(latest_boiler_setpoint, priority=13, direction=direction)
+
+            # Verify that new setpoint was sent
+            boiler_values = self.get_current_state()
+            current_boiler_sp = boiler_values.get('current_boiler_setpoint')
+            if abs(round(latest_boiler_setpoint, 1) - round(current_boiler_sp, 1)) > 0.3:
+                logger.info(f"[{pd.Timestamp.now()}] Sent boiler setpoint DOES NOT MATCH calculated setpoint!!! PLEASE CHECK")
+                logger.info(f"[{pd.Timestamp.now()}] Calculated boiler setpoint = {latest_boiler_setpoint}")
+                logger.info(f"[{pd.Timestamp.now()}] Current boiler setpoint read from Boiler= {current_boiler_sp}")
 
             await asyncio.sleep(self._model_update_rate)
 
@@ -317,7 +348,7 @@ def main():
         loop.run_forever()
 
     except KeyboardInterrupt:
-        print('Stopping event loop')
+        logger.info(f"[{pd.Timestamp.now()}] Stopping event loop")
         boiler.bldg_boilers[0].stop_htm_data_archive()
         loop.stop()
 
