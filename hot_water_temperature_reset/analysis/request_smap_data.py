@@ -338,6 +338,28 @@ def get_data_from_smap(points_to_download, paths, smap_client, start, end):
     return df_combine, data
 
 
+def convert_smap_to_pandas(smap_dat_arr, col_labels=None):
+    """
+    Convert a dataset downloaded from smap to a pandas dataframe
+    """
+
+    df = []
+    for i, dd in enumerate(smap_dat_arr):
+        df_timestamps = pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None)
+        if col_labels is not None:
+            cur_df = pd.DataFrame(dd[:, 1], index=df_timestamps, columns=[col_labels[i]])
+        else:
+            cur_df = pd.DataFrame(dd[:, 1], index=df_timestamps)
+
+        # add cur_df to container
+        df.append(cur_df)
+
+    # combine all individual timeseries
+    all_dfs = pd.concat(df, axis=1)
+
+    return all_dfs
+
+
 if __name__ == "__main__":
     # database settings
     url = "http://178.128.64.40:8079"
@@ -413,6 +435,9 @@ if __name__ == "__main__":
     fig_file = join(plot_folder, "boiler_temps.html")
     boiler_plot = plot_boiler_temps(boiler_points_to_download, boiler_data, fig_file, ctrlr_sp=boiler_sp_file, req_num=hwc_request_file)
 
+    # save data streams for later processing
+    boiler_df = convert_smap_to_pandas(boiler_data, col_labels=boiler_points_to_download["point_name_x"])
+    boiler_df.to_csv(join('./', 'DATA', 'smap_boiler_temps.csv'), index_label='Timestamp')
 
     #############################
     ##### Return hw consumer discharge temperatures
