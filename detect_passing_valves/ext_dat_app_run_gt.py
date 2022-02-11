@@ -154,27 +154,6 @@ def merge_down_up_stream_dat(vavs, ahu_file, matched_ahu_vav_file):
     return vavs
 
 
-
-def calc_add_features(vav_df, drop_na=False):
-    """
-    Calculate additional features needed for application
-    """
-    # identify when valve is open
-    vav_df['vlv_open'] = vav_df['vlv_po'] > 0
-
-    # calculate temperature difference between downstream and upstream air
-    vav_df['temp_diff'] = vav_df['dnstream_ta'] - vav_df['upstream_ta']
-
-    # drop na
-    if drop_na:
-        vav_df = vav_df.dropna()
-
-    # drop values where vav supply air is less than ahu supply air
-    vav_df = vav_df[vav_df['temp_diff'] >= 0]
-
-    return vav_df
-
-
 def CountFrequency(my_list):
      
     # Creating an empty dictionary
@@ -247,7 +226,6 @@ if __name__ == '__main__':
             print("Skipping VAV = {} because all required streams are not available".format(key))
             continue
 
-        vavs_df[key]['vlv_dat'] = calc_add_features(cur_vlv_df)
         vlv_df = vavs_df[key]['vlv_dat']
         row = vavs_df[key]['row']
 

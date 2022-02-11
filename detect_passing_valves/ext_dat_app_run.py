@@ -113,26 +113,6 @@ def clean_df(df):
     return vavs
 
 
-def calc_add_features(vav_df, drop_na=False):
-    """
-    Calculate additional features needed for application
-    """
-    # identify when valve is open
-    vav_df['vlv_open'] = vav_df['vlv_po'] > 0
-
-    # calculate temperature difference between downstream and upstream air
-    vav_df['temp_diff'] = vav_df['dnstream_ta'] - vav_df['upstream_ta']
-
-    # drop na
-    if drop_na:
-        vav_df = vav_df.dropna()
-
-    # drop values where vav supply air is less than ahu supply air
-    vav_df = vav_df[vav_df['temp_diff'] >= 0]
-
-    return vav_df
-
-
 def CountFrequency(my_list):
      
     # Creating an empty dictionary
@@ -202,7 +182,6 @@ if __name__ == '__main__':
 
     results = []
     for key in vavs_df.keys():
-        vavs_df[key]['vlv_dat'] = calc_add_features(vavs_df[key]['vlv_dat'])
         vlv_df = vavs_df[key]['vlv_dat']
         row = vavs_df[key]['row']
 

@@ -348,6 +348,28 @@ def _clean_vav(fetch_resp_vav, row):
         vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
         vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
 
+    return vav_df
+
+
+def calc_add_features(vav_df, drop_na=False, drop_neg_diff=False):
+    """
+    Calculate additional features needed to run the analysis
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    drop_na: Boolean to indicate if NAs in dataframe need to drop
+
+    drop_neg_diff: Boolean to indicate if negative difference between
+        downstream and upstream need to be dropped
+
+    Returns
+    -------
+    vav_df: Pandas dataframe with valve timeseries data with additional
+        features
+    """
+
     # identify when valve is open
     vav_df['vlv_open'] = vav_df['vlv_po'] > 0
 
@@ -355,10 +377,12 @@ def _clean_vav(fetch_resp_vav, row):
     vav_df['temp_diff'] = vav_df['dnstream_ta'] - vav_df['upstream_ta']
 
     # drop na
-    # vav_df = vav_df.dropna()
+    if drop_na:
+        vav_df = vav_df.dropna()
 
-    # drop values where vav supply air is less than ahu supply air
-    vav_df = vav_df[vav_df['temp_diff'] >= 0]
+    # drop values where vav supply air temperature is less than ahu supply air
+    if drop_neg_diff:
+        vav_df = vav_df[vav_df['temp_diff'] >= 0]
 
     return vav_df
 
@@ -523,18 +547,6 @@ def _clean_ahu(fetch_resp_ahu, row):
 
     ahu_df = pd.concat([upstream, dnstream, vlv_po], axis=1)
     ahu_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
-
-    # identify when valve is open
-    ahu_df['vlv_open'] = ahu_df['vlv_po'] > 0
-
-    # calculate temperature difference between downstream and upstream air
-    ahu_df['temp_diff'] = ahu_df['dnstream_ta'] - ahu_df['upstream_ta']
-
-    # drop na
-    # ahu_df = ahu_df.dropna()
-
-    # drop values where vav supply air is less than ahu supply air
-    #ahu_df = ahu_df[ahu_df['temp_diff'] >= 0]
 
     return ahu_df
 
@@ -1303,6 +1315,9 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     # vav_oi = [entry.split("-")[1] for entry in files]
     # if row['equip'] in ['VAVRM2323']:
     #     import pdb; pdb.set_trace()
+
+    # calculate additional parameters for analysis
+    vlv_df = calc_add_features(vlv_df, drop_na=False)
 
     # check for empty dataframe
     if vlv_df.empty:
