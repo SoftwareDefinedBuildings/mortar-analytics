@@ -35,20 +35,20 @@ def _query_and_qualify():
     vav_query = """SELECT *
     WHERE {
         ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
-        ?equip        bf:isFedBy+                 ?ahu .
+        ?equip        brick:isFedBy+              ?ahu .
         ?vlv          rdf:type                    ?vlv_type .
-        ?ahu          bf:hasPoint                 ?upstream_ta .
-        ?equip        bf:hasPoint                 ?dnstream_ta .
+        ?ahu          brick:hasPoint              ?upstream_ta .
+        ?equip        brick:hasPoint              ?dnstream_ta .
         ?upstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
         ?dnstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-        ?equip        bf:hasPoint                 ?vlv .
+        ?equip        brick:hasPoint              ?vlv .
         ?vlv          rdf:type/rdfs:subClassOf*   brick:Valve_Command .
     };"""
 
     fan_query = """SELECT *
     WHERE {
         ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
-        ?equip        bf:hasPoint                 ?air_flow .
+        ?equip        brick:hasPoint              ?air_flow .
         ?air_flow     rdf:type/rdfs:subClassOf*   brick:Supply_Air_Flow_Sensor .
     };"""
 
@@ -57,10 +57,10 @@ def _query_and_qualify():
     WHERE {
         ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
         ?vlv        rdf:type                    ?vlv_type .
-        ?equip      bf:hasPoint                 ?vlv .
+        ?equip      brick:hasPoint              ?vlv .
         ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
         ?air_temps  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
-        ?equip      bf:hasPoint                 ?air_temps .
+        ?equip      brick:hasPoint              ?air_temps .
         ?air_temps  rdf:type                    ?temp_type .
     };"""
 
@@ -68,10 +68,10 @@ def _query_and_qualify():
     WHERE {
         ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
         ?vlv        rdf:type                    ?vlv_type .
-        ?equip      bf:hasPoint                 ?vlv .
+        ?equip      brick:hasPoint              ?vlv .
         ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
         ?air_temps  rdf:type/rdfs:subClassOf*   brick:Return_Air_Temperature_Sensor .
-        ?equip      bf:hasPoint                 ?air_temps .
+        ?equip      brick:hasPoint              ?air_temps .
         ?air_temps  rdf:type                    ?temp_type .
     };"""
 
