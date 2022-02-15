@@ -810,7 +810,7 @@ def analyze_timestamps(vlv_df, th_time, window, row=None, project_folder='./'):
         _name = "{}-{}-{}_dat".format(row['site'], row['equip'], row['vlv'])
 
         full_path = rename_existing(join(project_folder, csv_folder, _name + '.csv'), idx=0, row=row)
-        vlv_df.to_csv(full_path)
+        vlv_df.to_csv(full_path, index_label="Time")
 
     # drop rows of data where valve position is unknown
     vlv_df = vlv_df.dropna(subset=['vlv_po'])

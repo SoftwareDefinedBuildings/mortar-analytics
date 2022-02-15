@@ -53,6 +53,11 @@ def plot_valve_data(csv_path, fault_dates=None, fig_folder='./'):
     src = ColumnDataSource(subset_dat)
     index_name = subset_dat.index.name
 
+    if index_name == "" or index_name is None:
+        index_name = "Time"
+        subset_dat.index.name = index_name
+        src = ColumnDataSource(subset_dat)
+
     # make the plot
     max_date_idx = min(480, len(vlv_dat.index))
     p = figure(plot_height=300, plot_width=800, tools='xpan', toolbar_location=None,
@@ -133,7 +138,7 @@ def plot_valve_data(csv_path, fault_dates=None, fig_folder='./'):
 
     # save plot
     head, tail = os.path.split(csv_path)
-    plot_name = '{}-timeseries.html'.format(tail.split('.csv')[0])
+    plot_name = '{}-ts.html'.format(tail.split('.csv')[0])
     output_file(join(fig_folder, plot_name))
     save(column(p, select))
 
@@ -167,7 +172,7 @@ def plot_fault_valves(vlv_dat_folder, fault_dat_path, fig_folder, time_format="T
     print('-------Finished processing passing valve plots-----')
 
 
-def plot_good_valves(vlv_dat_folder, sample_size, fig_folder):
+def plot_valve_ts_streams(vlv_dat_folder, valve_plot_files ,sample_size, fig_folder):
     """
     Plot timeseries data for valves that have normal operation
     """
@@ -176,7 +181,7 @@ def plot_good_valves(vlv_dat_folder, sample_size, fig_folder):
 
     # get file paths of csvs
     all_csv_files = os.listdir(vlv_dat_folder)
-    good_valve_files = os.listdir(join(vlv_dat_folder, '../', 'good_valves'))
+    good_valve_files = os.listdir(valve_plot_files)
     good_valve_files = [tail.split('.png')[0] for tail in good_valve_files]
 
     # sample define number of files
@@ -201,17 +206,17 @@ def plot_good_valves(vlv_dat_folder, sample_size, fig_folder):
 if __name__ == '__main__':
 
     # define data sources
-    project_folder = join('./', 'external_analysis', 'bldg_trc_rs', 'lg_4hr_shrt_1hr_Nov22_no_off_period')
+    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_with_airflow_req')
     vlv_dat_folder = join(project_folder, "csv_data")
 
     # fault data plots
-    fig_folder_faults = join(project_folder, 'timeseries_valve_faults')
+    fig_folder_faults = join(project_folder, 'ts_valve_faults')
     fault_dat_path = join(project_folder, "passing_valve_results.csv")
 
-    plot_fault_valves(vlv_dat_folder, fault_dat_path, fig_folder_faults, time_format="Timestamp('%Y-%m-%d %H:%M:%S')")
+    plot_fault_valves(vlv_dat_folder, fault_dat_path, fig_folder_faults, time_format="Timestamp('%Y-%m-%d %H:%M:%S%z', tz='UTC')")
 
     # good data plots
-    fig_folder_good = join(project_folder, 'timeseries_valve_good')
-    plot_good_valves(vlv_dat_folder, sample_size='all', fig_folder=fig_folder_good)
+    fig_folder_good = join(project_folder, 'ts_valve_good')
+    plot_valve_ts_streams(vlv_dat_folder, (join(project_folder, 'good_valves')), sample_size='all', fig_folder=fig_folder_good)
 
 
