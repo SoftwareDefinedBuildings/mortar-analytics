@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import gaussian_kde
 
+from fault_tests import fault_sensor_inactivity
+
 log_details = True
 
 def _query_and_qualify():
@@ -389,7 +391,7 @@ def calc_add_features(vav_df, drop_na=False, drop_neg_diff=False):
     return vav_df
 
 
-def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=False, af_accu_factor=0.5):
+def drop_unoccupied_dat(df, row=None, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=False, af_accu_factor=0.5):
     """
     Drop data rows from dataframe for timeseries that are during unoccupied hours. Uses airflow
     data if available else it uses building occupancy hours.
@@ -438,6 +440,10 @@ def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5, air_flow_require
         else:
             min_air_flow = low_air_flow
 
+        # return calculated results
+        if row is not None:
+            row.update({"minimum_air_flow_cutoff": round(min_air_flow,1)})
+
         df = df.loc[df['air_flow'] > min_air_flow]
     elif 'air_flow' not in df.columns and air_flow_required:
         df = pd.DataFrame()
@@ -446,7 +452,10 @@ def drop_unoccupied_dat(df, occ_str=6, occ_end=18, wkend_str=5, air_flow_require
         print("No airflow data, using explicit occupancy hours to do analysis.")
         df = occupied_hours_subset(df, occ_str, occ_end, wkend_str)
 
-    return df
+    if row is not None:
+        return df, row
+    else:
+        return df
 
 
 def get_vav_flow(fetch_resp_vav, row, fillna=None):
@@ -1365,8 +1374,18 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
             consecutive timestamps! Skipping...".format(row['vlv'], row['site']))
         return passing_type
 
+
+    # check that sensors are not reporting constant numbers
+    vlv_df, passing_type = fault_sensor_inactivity(vlv_df, passing_type)
+
+
+    if 'air_flow' in vlv_df.columns:
+        # plot temp diff vs air flow
+        _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'))
+
+
     # drop data that occurs during unoccupied hours
-    vlv_df = drop_unoccupied_dat(vlv_df, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=air_flow_required)
+    vlv_df, row = drop_unoccupied_dat(vlv_df, row=row, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=air_flow_required)
 
     if vlv_df.empty:
         print("'{}' in site {} has no data after hours of \
@@ -1437,13 +1456,15 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
                 passing_type['leak_grtr_threshold_fail'] = est_leak
 
     failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail', 'leak_grtr_threshold_fail'] for x in passing_type.keys()]
-    if any(failure):
+    if len([x for x in passing_type.keys() if 'sensor_fault' in x]):
+        folder = join(project_folder, sensor_fault_folder)
+    elif any(failure):
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
     else:
         folder = join(project_folder, good_folder)
 
-    # categorized good and bad points
+        # categorized good and bad points
     vlv_df.loc[:, 'good_oper_cat'] = True
     if bad_vlv is not None:
         vlv_df.loc[bad_vlv.index, 'good_oper_cat'] = False
@@ -1454,6 +1475,11 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     # lal = bad_vlv.groupby('same')
     # grps = list(lal.groups.keys())
     # bad_vlv.loc[lal.groups[grps[0]]]
+
+    if True:
+        with open(join(project_folder, 'minimum_airflow_values.txt'), 'a') as f:
+            f.write(str(row))
+            f.write(',\n')
 
     return passing_type
 
@@ -1572,11 +1598,13 @@ def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th
     -------
     None
     """
+
     # declare user hidden parameters
     global long_term_fail   # number of minutes to trigger an long-term passing valve failure
     global shrt_term_fail   # number of minutes to trigger an intermitten passing valve failure
     global good_folder
     global bad_folder
+    global sensor_fault_folder
     global air_flow_folder
     global csv_folder
 
@@ -1588,12 +1616,14 @@ def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th
     # define container folders
     good_folder = 'good_valves'         # name of path to the folder to save the plots of the correct operating valves
     bad_folder = 'bad_valves'           # name of path to the folder to save the plots of the malfunction valves
+    sensor_fault_folder = 'sensor_fault'# name of path to the folder to save plots of equipment with sensor faults
     air_flow_folder = 'air_flow_plots'  # name of path to the folder to save plots of the air flow values
     csv_folder = 'csv_data'             # name of path to the folder to save detailed valve data
 
     # check if holding folders exist
     check_folder_exist(join(project_folder, bad_folder))
     check_folder_exist(join(project_folder, good_folder))
+    check_folder_exist(join(project_folder, sensor_fault_folder))
     check_folder_exist(join(project_folder, air_flow_folder))
     check_folder_exist(join(project_folder, csv_folder))
 
