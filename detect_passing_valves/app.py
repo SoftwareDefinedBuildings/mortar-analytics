@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import gaussian_kde
 
+log_details = True
+
 def _query_and_qualify():
     """
     Build query to return control valves, up- and down- stream air temperatures relative to the
@@ -698,6 +700,30 @@ def check_folder_exist(folder):
     if not os.path.exists(folder):
         os.makedirs(folder)
 
+
+def setup_logging(outfolder='./'):
+    """
+    Setup logging if enabled
+    Parameters
+    ----------
+    log_details: Boolean indicating if detailed logging should be enabled
+    """
+    import logging
+    # Setup logging
+    log_file_name = join(outfolder, "vav_app_details.log")
+    logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+
+    global logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    c_handler = logging.StreamHandler(sys.stdout)
+    f_handler = logging.FileHandler(log_file_name)
+
+    logger.addHandler(c_handler)
+    logger.addHandler(f_handler)
+
+
 def calc_long_t_diff(vlv_df):
     """
     Calculate statistics on difference between down- and up-
@@ -1268,10 +1294,11 @@ def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
         print_passing_mgs(row)
         pass_type['simple_fail'] = round(long_tc['50%'] - th_bad_vlv, 2)
         folder = join(project_folder, bad_folder)
-        import pdb; pdb.set_trace()
+        vlv_df.loc[:, 'good_oper_cat'] = False
     else:
         vlv_df.loc[:, 'good_oper_cat'] = True
         folder = join(project_folder, good_folder)
+        if log_details: logger.info("[{}] is only closed with good operation data".format(row['vlv']))
 
     _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=folder)
 
@@ -1303,6 +1330,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     -------
     None
     """
+    if log_details:
+        setup_logging(outfolder=project_folder)
 
     # update variables
     if detection_params is not None:
@@ -1316,17 +1345,17 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     # if row['equip'] in ['VAVRM2323']:
     #     import pdb; pdb.set_trace()
 
+
     # calculate additional parameters for analysis
     vlv_df = calc_add_features(vlv_df, drop_na=False)
 
     # check for empty dataframe
     if vlv_df.empty:
-        print("'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site']))
+        message = "'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site'])
+        print(message)
+        if log_details: logger.info(message)
         return passing_type
 
-    if 'air_flow' in vlv_df.columns:
-        # plot temp diff vs air flow
-        _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'))
 
     # Analyze timestamps and valve operation changes
     vlv_df = analyze_timestamps(vlv_df, th_time, window, row=row, project_folder=project_folder)
