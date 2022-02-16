@@ -10,6 +10,7 @@ The data needed to run application are the following:
 """
 
 import pandas as pd
+import pickle
 import numpy as np
 import os
 import glob
@@ -32,7 +33,7 @@ def read_files(folder, sample_num=None):
 
     vavs = {}
     for vfile in vav_files:
-        cur_vav_name = os.path.basename(vfile).split(".csv")[0]
+        cur_vav_name = os.path.basename(vfile).split(".csv")[0].replace('_dat', '')
 
         try:
             site, vav, vlv = cur_vav_name.split("-", 2)
@@ -60,9 +61,19 @@ def read_files(folder, sample_num=None):
     return vavs
 
 
+def parse_dict_list_file(line):
+
+    dictionary = dict()
+    pairs = line.strip().strip(",").strip('{}').split(', ')
+    for pr in pairs:
+        pair = pr.split(': ')
+        dictionary[pair[0].strip('\'\'\"\"')] = pair[1].strip('\'\'\"\"')
+
+    return dictionary
+
 if __name__ == '__main__':
     dat_folder = join('with_airflow_checks_year_start', 'csv_data')
-    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_no_aflw_req_sensor_fault')
+    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_no_aflw_req')
 
     # define container folders
     good_folder = 'good_valves'         # name of path to the folder to save the plots of the correct operating valves
@@ -80,7 +91,7 @@ if __name__ == '__main__':
 
     # define user parameters
     detection_params = {
-        "th_bad_vlv": 5,           # temperature difference from long term temperature difference to consider an operating point as malfunctioning
+        "th_bad_vlv": 10,           # temperature difference from long term temperature difference to consider an operating point as malfunctioning
         "th_time": 12,             # length of time, in minutes, after the valve is closed to determine if valve operating point is malfunctioning
         "window": 15,              # aggregation window, in minutes, to average the raw measurement data
         "long_term_fail": 4*60,    # number of minutes to trigger an long-term passing valve failure
@@ -97,6 +108,7 @@ if __name__ == '__main__':
     vavs_df = read_files(dat_folder)
 
     results = []
+    vav_count_summary = []
     for key in vavs_df.keys():
         cur_vlv_df = vavs_df[key]['vlv_dat']
         required_streams = [stream in cur_vlv_df.columns for stream in ['dnstream_ta', 'upstream_ta', 'vlv_po']]
@@ -106,6 +118,7 @@ if __name__ == '__main__':
 
         vlv_df = vavs_df[key]['vlv_dat']
         row = vavs_df[key]['row']
+        vav_count_summary.append({'site': row['site'], 'equip': row['equip']})
 
         # define variables
         vlv_dat = dict(row)
@@ -124,10 +137,28 @@ if __name__ == '__main__':
     fig_folder_faults = join(project_folder, "ts_valve_faults")
     fig_folder_good = join(project_folder, "ts_valve_good")
     post_process_vlv_dat = join(project_folder, "csv_data")
+    vav_count_file = join(project_folder, 'vav_count_summary.csv')
+    raw_analyzed_data = join(project_folder, 'raw_analyzed_data.pkl')
+    raw_analyzed_results = join(project_folder, 'raw_analyzed_results.pkl')
 
     final_df = pd.DataFrame.from_records(results)
     final_df = clean_final_report(final_df, drop_null=False)
     final_df.to_csv(fault_dat_path)
+
+    vav_count_summary = pd.DataFrame.from_records(vav_count_summary)
+    vav_count_summary.to_csv(vav_count_file)
+
+    raw_df = open(raw_analyzed_data, "wb")
+    pickle.dump(vavs_df, raw_df)
+    raw_df.close()
+
+    raw_result = open(raw_analyzed_results, "wb")
+    pickle.dump(results, raw_result)
+    raw_result.close()
+
+    # raw_df = open(raw_analyzed_data, "rb")
+    # object_file = pickle.load(raw_df)
+    # raw_df.close()
 
     # create timeseries plots of the data
     plot_fault_valves(post_process_vlv_dat, fault_dat_path, fig_folder_faults, time_format="Timestamp('%Y-%m-%d %H:%M:%S%z', tz='UTC')")
@@ -135,4 +166,26 @@ if __name__ == '__main__':
 
     # plot good vav operation timeseries
     plot_valve_ts_streams(post_process_vlv_dat, join(project_folder, good_folder), sample_size='all', fig_folder=fig_folder_good)
+    import pdb; pdb.set_trace()
+
+    # Perform additional analysis
+    f = open(join(project_folder, 'minimum_airflow_values.txt'), 'r')
+    lines = f.readlines()
+    f.close()
+
+    vav_results = []
+    for line in lines:
+        vav_results.append(parse_dict_list_file(line))
+
+    vav_results = pd.DataFrame.from_records(vav_results)
+
+    numeric_cols = ['minimum_air_flow_cutoff', 'long_t', 'long_tbad', 'bad_ratio', 'long_to']
+    vav_results[numeric_cols] = vav_results[numeric_cols].apply(pd.to_numeric, errors='coerce')
+    vav_results['folder_short'] = vav_results['folder'].apply(os.path.basename)
+
+    # summary statistics for each site
+    vav_results_grp = vav_results.groupby(['site', 'folder_short'])
+    vav_results_grp['long_t'].describe()
+
+
     import pdb; pdb.set_trace()

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.stats import gaussian_kde
 
-from fault_tests import fault_sensor_inactivity
+from fault_tests import fault_sensor_inactivity, fault_sensor_out_of_range
 
 log_details = True
 
@@ -1396,6 +1396,9 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
 
     # check that sensors are not reporting constant numbers
     vlv_df, passing_type = fault_sensor_inactivity(vlv_df, passing_type)
+
+    # check that sensors are within range
+    vlv_df, passing_type = fault_sensor_out_of_range(vlv_df, passing_type)
 
 
     if 'air_flow' in vlv_df.columns:

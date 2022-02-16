@@ -206,7 +206,7 @@ def plot_valve_ts_streams(vlv_dat_folder, valve_plot_files ,sample_size, fig_fol
 if __name__ == '__main__':
 
     # define data sources
-    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_with_airflow_req')
+    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_no_aflw_req_sensor_fault')
     vlv_dat_folder = join(project_folder, "csv_data")
 
     # fault data plots
