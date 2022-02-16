@@ -1353,6 +1353,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     -------
     None
     """
+    log_rows_info = True
     if log_details:
         setup_logging(outfolder=project_folder)
 
@@ -1377,6 +1378,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
         message = "'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site'])
         print(message)
         if log_details: logger.info(message)
+        row.update({'output_details': 'no data after calc features'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
         return passing_type
 
 
@@ -1386,6 +1389,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     if vlv_df is None:
         print("'{}' in site {} has no data after analyzing \
             consecutive timestamps! Skipping...".format(row['vlv'], row['site']))
+        row.update({'output_details': 'no data after timestamp analysis'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
         return passing_type
 
 
@@ -1404,6 +1409,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     if vlv_df.empty:
         print("'{}' in site {} has no data after hours of \
             occupancy check! Skipping...".format(row['vlv'], row['site']))
+        row.update({'output_details': 'no data after occupancy check'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
         return passing_type
 
     # determine if valve datastream has open and closed data
@@ -1412,11 +1419,13 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     if len(bool_type) < 2:
         if bool_type[0]:
             # only open valve data
-            passing_type = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
+            passing_type, row = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
+            row.update({'output_details': 'only open valve data'})
         else:
             # only closed valve data
-            passing_type = analyze_only_close(vlv_df, row, th_bad_vlv, project_folder)
-
+            passing_type, row = analyze_only_close(vlv_df, row, th_bad_vlv, project_folder)
+            row.update({'output_details': 'only closed valve data'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
         return passing_type
 
     # TODO: Figure out what to do if long_tc is None!
@@ -1425,8 +1434,10 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
 
     if long_tc is None and long_to is not None:
-        pass_type = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
+        pass_type, row = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
         passing_type.update(pass_type)
+        row.update({'output_details': 'no consecutive timestamps and steady state conditions when valve is closed'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
         return passing_type
 
     # make simple comparison of long-term closed temp difference and user define threshold
@@ -1453,26 +1464,26 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
 
     if bad_vlv is None:
         bad_ratio = 0
-        long_tbad = long_tc['mean']
+        long_tbad = None# long_tc['50%']
     else:
         bad_ratio = 100*(bad_vlv.shape[0]/vlv_df.shape[0])
-        long_tbad = bad_vlv['temp_diff'].describe()['mean']
+        long_tbad = bad_vlv['temp_diff'].describe()['50%']
 
     # estimate size of leak in terms of pct that valve is open
     if df_fit_nz is not None:
         est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
-        if est_leak > popt[1] and bad_ratio > 5:
+        if est_leak > popt[1]:
             passing_type['leak_grtr_xovr_fail'] = est_leak
     else:
         if bad_vlv is not None:
             est_leak = bad_vlv['temp_diff'].mean()
-            if bad_ratio > 5 and est_leak > th_bad_vlv:
+            if est_leak > th_bad_vlv:
                 passing_type['leak_grtr_threshold_fail'] = est_leak
 
     failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail', 'leak_grtr_threshold_fail'] for x in passing_type.keys()]
     if len([x for x in passing_type.keys() if 'sensor_fault' in x]):
         folder = join(project_folder, sensor_fault_folder)
-    elif any(failure):
+    elif any(failure) and bad_ratio > 5:
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
     else:
@@ -1483,19 +1494,27 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     if bad_vlv is not None:
         vlv_df.loc[bad_vlv.index, 'good_oper_cat'] = False
 
-    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['25%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
+    row.update({'long_t': round(long_tc['50%'], 2), 'long_tbad': None if long_tbad is None else round(long_tbad, 2), 'bad_ratio': round(bad_ratio, 2), 'folder': folder})
 
     # TODO get a detailed report of the when valve is malfunctioning
     # lal = bad_vlv.groupby('same')
     # grps = list(lal.groups.keys())
     # bad_vlv.loc[lal.groups[grps[0]]]
 
-    if True:
-        with open(join(project_folder, 'minimum_airflow_values.txt'), 'a') as f:
-            f.write(str(row))
-            f.write(',\n')
+    if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
 
     return passing_type
+
+
+def log_row_details(row, outfolder):
+    """
+    Log information out to external file
+    """
+    with open(outfolder, 'a') as f:
+        f.write(str(row))
+        f.write(',\n')
+
 
 def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, project_folder):
     """
