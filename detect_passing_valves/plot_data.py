@@ -59,7 +59,7 @@ def plot_valve_data(csv_path, fault_dates=None, fig_folder='./'):
         src = ColumnDataSource(subset_dat)
 
     # make the plot
-    max_date_idx = min(480, len(vlv_dat.index))
+    max_date_idx = min(480, len(vlv_dat.index)-1)
     p = figure(plot_height=300, plot_width=800, tools='xpan', toolbar_location=None,
                 x_axis_type='datetime', x_axis_location='above',
                 x_range=(vlv_dat.index[0], vlv_dat.index[max_date_idx]),

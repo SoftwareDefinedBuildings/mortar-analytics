@@ -895,7 +895,7 @@ def return_extreme_points(dat, type_of_extreme=None, n_modes=None, sort=True):
         return idx
 
 
-def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=None, bad_ratio=None, folder='./'):
+def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, long_to=None, df_fit=None, bad_ratio=None, folder='./'):
     """
     Make plot showing the correct and bad operating points of the valve control along with helper annotations 
     e.g. long term average for correct and malfunction operating points when valve is commanded off, model fit, and
@@ -934,15 +934,15 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
     fig, ax = plt.subplots(figsize=(8,4.5))
     ax.set_ylabel('Temperature difference [°F]')
     ax.set_xlabel('Valve opened [%]')
-    ax.set_title("Valve = {}\nEquip. = {}".format(row['vlv'], row['equip']), loc='left')
+    ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left')
     ax.set_ylim((0, np.ceil(y_max*1.05)))
 
 
-    if any(~vlv_df['good_oper_cat']):
-        ax.scatter(x=vlv_df.loc[~vlv_df['good_oper_cat'], 'vlv_po'], y=vlv_df.loc[~vlv_df['good_oper_cat'], 'temp_diff'], color = bad_oper_color, alpha=1/3, s=10, label='Pred. bad operation')
-
     if any(vlv_df['good_oper_cat']):
-        ax.scatter(x=vlv_df.loc[vlv_df['good_oper_cat'], 'vlv_po'], y=vlv_df.loc[vlv_df['good_oper_cat'], 'temp_diff'], color = good_oper_color, alpha=1/3, s=10, label='Pred. good operation')
+        ax.scatter(x=vlv_df.loc[vlv_df['good_oper_cat'], 'vlv_po'], y=vlv_df.loc[vlv_df['good_oper_cat'], 'temp_diff'], color = good_oper_color, alpha=1/3, s=10, label='Pred. no fault operation')
+
+    if any(~vlv_df['good_oper_cat']):
+        ax.scatter(x=vlv_df.loc[~vlv_df['good_oper_cat'], 'vlv_po'], y=vlv_df.loc[~vlv_df['good_oper_cat'], 'temp_diff'], color = bad_oper_color, alpha=1/3, s=10, label='Pred. fault operation')
 
     # if 'color' in vlv_df.columns:
     #     ax.scatter(x=vlv_df['vlv_po'], y=vlv_df['temp_diff'], color = vlv_df['color'], alpha=1/3, s=10)
@@ -955,18 +955,22 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, df_fit=N
 
     if long_t is not None:
         # add long-term temperature diff
-        ax.axhline(y=long_t, color='#00b3b3', label='Est. Td (closed valve-good)')
+        ax.axhline(y=long_t, color='#00b3b3', linestyle = ':', label='Median Tdiff (closed valve-no fault)')
+
+    if long_to is not None:
+        # add long-term temperature diff when valve is only open
+        ax.axhline(y=long_to, color='#00b3b3', linestyle = ':', label='Median Tdiff (open valve-no fault)')
 
     if long_tbad is not None:
-        ax.axhline(y=long_tbad, color='#ff8cc6', label='Est. Td (closed valve-bad)')
+        ax.axhline(y=long_tbad, color='#ff8cc6', linestyle = '-.', label='Median Tdiff (closed valve-fault)')
 
     if bad_ratio is not None:
         # add ratio where presumably passing valve
-        ax.text(.2, 0.95*y_max, "Bad operation ratio={:.1f}%".format(bad_ratio))
+        ax.text(.25, 0.98*y_max, "Fault operation proportion={:.1f}%".format(bad_ratio))
 
     # legend
     # ax.legend(fontsize=8, markerscale=1, borderaxespad=0., ncol=2, loc='upper right', bbox_to_anchor=(0.15, 1.05, 1., .102))
-    ax.legend(fontsize=6, markerscale=1, borderaxespad=0., ncol=2, bbox_to_anchor=(.55, 1.02), loc='lower left')
+    ax.legend(fontsize=6, markerscale=1, borderaxespad=0., ncol=2, bbox_to_anchor=(.48, 1.02), loc='lower left')
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
     full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
@@ -1023,7 +1027,7 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
     fig, ax = plt.subplots(figsize=(8,4.5))
     ax.set_ylabel('Temperature difference [°F]')
     ax.set_xlabel('Air flow [cfm]')
-    ax.set_title("Valve = {}\nEquip. = {}".format(row['vlv'], row['equip']), loc='left')
+    ax.set_title("Valve = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left')
 
     if any(~vlv_df['vlv_open']):
         ax.scatter(x=vlv_df.loc[~vlv_df['vlv_open'], 'air_flow'], y=vlv_df.loc[~vlv_df['vlv_open'], 'temp_diff'], color = closed_vlv_color, alpha=1/3, s=10, label='Closed valve')
@@ -1269,13 +1273,18 @@ def analyze_only_open(vlv_df, row, th_bad_vlv, project_folder):
         pass_type['non_responsive_fail'] = round(long_to['50%'] - th_bad_vlv, 2)
         folder = join(project_folder, bad_folder)
         vlv_df.loc[:, 'good_oper_cat'] = False
+        long_t = None
+        long_tbad = long_to['50%']
     else:
         vlv_df.loc[:, 'good_oper_cat'] = True
         folder = join(project_folder, good_folder)
+        long_t = long_to['50%']
+        long_tbad = None
 
-    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_to['50%'], folder=folder)
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_to=long_t, long_tbad=long_tbad, folder=folder)
+    row.update({'long_to': round(long_to['50%'], 2), 'folder': folder})
 
-    return pass_type
+    return pass_type, row
 
 def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
     """
@@ -1304,14 +1313,19 @@ def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
         pass_type['simple_fail'] = round(long_tc['50%'] - th_bad_vlv, 2)
         folder = join(project_folder, bad_folder)
         vlv_df.loc[:, 'good_oper_cat'] = False
+        long_t = None
+        long_tbad = long_tc['50%']
     else:
         vlv_df.loc[:, 'good_oper_cat'] = True
         folder = join(project_folder, good_folder)
+        long_t = long_tc['50%']
+        long_tbad = None
         if log_details: logger.info("[{}] is only closed with good operation data".format(row['vlv']))
 
-    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], folder=folder)
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_t, long_tbad=long_tbad, folder=folder)
+    row.update({'long_t': round(long_tc['50%'], 2), 'folder': folder})
 
-    return pass_type
+    return pass_type, row
 
 def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folder='./', detection_params=None):
     """
