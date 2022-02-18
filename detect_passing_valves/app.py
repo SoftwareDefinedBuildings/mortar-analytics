@@ -622,7 +622,7 @@ def rescale_fit(scaled_vals, vals=None, max_val=None, min_val=None):
     return unscaled_vals
 
 
-def sigmoid(x, k, x0, y_max=1, y_min=0):
+def sigmoid(x, k, x0):
     """
     Sigmoid function curve to do a logistic model
 
@@ -638,6 +638,8 @@ def sigmoid(x, k, x0, y_max=1, y_min=0):
     -------
     y: value of the function at point x
     """
+    y_max=1
+    y_min=0
     return y_min + ((y_max - y_min) / (1 + np.exp(-k * (x - x0))))
 
 
