@@ -622,7 +622,7 @@ def rescale_fit(scaled_vals, vals=None, max_val=None, min_val=None):
     return unscaled_vals
 
 
-def sigmoid(x, k, x0):
+def sigmoid(x, k, x0, y_max=1, y_min=0):
     """
     Sigmoid function curve to do a logistic model
 
@@ -631,14 +631,25 @@ def sigmoid(x, k, x0):
     x: independent variable
     k: slope of the sigmoid function
     x0: midpoint/inflection point of the sigmoid function
+    y_max: maximum value of data
+    y_min: minimum value of data
 
     Returns
     -------
     y: value of the function at point x
     """
-    return 1.0 / (1 + np.exp(-k * (x - x0)))
+    return y_min + ((y_max - y_min) / (1 + np.exp(-k * (x - x0))))
 
-def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff'):
+
+def make_sigmoid_func(y_max=1, y_min=0):
+
+    def sigmoid(x, k, x0):
+        return y_min + (y_max - y_min) / (1 + np.exp(-k * (x - x0)))
+
+    return sigmoid
+
+
+def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff', scaled=True):
     """
     Build a logistic model with data provided
 
@@ -1101,7 +1112,7 @@ def density_data(dat, rescale_dat=None):
 
     return xs, ys
 
-def find_bad_vlv_operation(vlv_df, model, window):
+def find_bad_vlv_operation(vlv_df, row, model, popt, window):
     """
     Determine which timeseries values are data from probable passing valves and return 
     a pandas dataframe of only 'bad' values.
@@ -1112,6 +1123,8 @@ def find_bad_vlv_operation(vlv_df, model, window):
 
     long_t: long-term temperature difference between down and up air streams when valve is 
             commanded close for correct operation
+
+    popt: an array of the optimized parameters, slope and inflection point of the sigmoid function
 
     window : aggregation window, in minutes, to average the raw measurement data
 
@@ -1462,7 +1475,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     df_fit_nz, popt = build_logistic_model(no_zeros_po)
 
     # calculate bad valve instances vs overall dataframe
-    bad_vlv, pass_type = find_bad_vlv_operation(vlv_df, df_fit_nz, window)
+    bad_vlv, pass_type = find_bad_vlv_operation(vlv_df, row, df_fit_nz, popt, window)
     passing_type.update(pass_type)
 
     if bad_vlv is None:
@@ -1486,6 +1499,9 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail', 'leak_grtr_threshold_fail'] for x in passing_type.keys()]
     if len([x for x in passing_type.keys() if 'sensor_fault' in x]):
         folder = join(project_folder, sensor_fault_folder)
+    elif 'long_term_fail' in passing_type.keys():
+        print_passing_mgs(row)
+        folder = join(project_folder, bad_folder)
     elif any(failure) and bad_ratio > 5:
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
