@@ -651,7 +651,7 @@ def make_sigmoid_func(y_max=1, y_min=0):
     return sigmoid
 
 
-def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff', scaled=True):
+def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff', scaled=False):
     """
     Build a logistic model with data provided
 
@@ -672,24 +672,45 @@ def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff', scaled=True):
 
     try:
         # fit the curve
-        scaled_pos = scale_0to1(df[x_col])
-        scaled_t = scale_0to1(df[y_col])
-        popt, pcov = curve_fit(sigmoid, scaled_pos, scaled_t)
+        if scaled:
+            scaled_pos = scale_0to1(df[x_col])
+            scaled_t = scale_0to1(df[y_col])
+            sigmoid_func = sigmoid
+            popt, pcov = curve_fit(sigmoid_func, scaled_pos, scaled_t)
 
-        # calculate fitted temp difference values
-        est_k, est_x0 = popt
-        popt[1] = rescale_fit(popt[1], df[x_col])
-        y_fitted = rescale_fit(sigmoid(scaled_pos, est_k, est_x0), df[y_col])
-        y_fitted.name = 'y_fitted'
+            # calculate fitted temp difference values
+            est_k, est_x0 = popt
+            # popt[1] = rescale_fit(popt[1], df[x_col])
+            y_fitted = rescale_fit(sigmoid_func(scaled_pos, est_k, est_x0), df[y_col])
+            y_fitted.name = 'y_fitted'
+        else:
+            x_vals = df[x_col]
+            y_vals = df[y_col]
+            y_max = max(y_vals)
+            y_min = min(y_vals)
+            sigmoid_func = make_sigmoid_func(y_max, y_min)
 
-        # sort values
+            popt, pcov = curve_fit(sigmoid_func, x_vals, y_vals)
+            est_k, est_x0 = popt
+            y_fitted = sigmoid_func(x_vals, est_k, est_x0)
+            y_fitted.name = 'y_fitted'
+
+        # make sure model goes from 0 to 100 percent
+        x_ext_vals = range(0,105,5)
+        y_ext_vals = sigmoid_func(x_ext_vals, est_k, est_x0)
+        df_ext = pd.DataFrame({'vlv_po': x_ext_vals, 'y_fitted': y_ext_vals})
+
+        # add extra values and sort values
         df_fit = pd.concat([df[x_col], y_fitted], axis=1)
-        df_fit = df_fit.sort_values(by=x_col)
+        df_fit = pd.concat([df_fit, df_ext])
+        df_fit = df_fit.sort_values(by=x_col).reset_index(drop=True)
+
     except RuntimeError:
         print("Model unabled to be developed\n")
         return None, None
 
     return df_fit, popt
+
 
 def try_limit_dat_fit_model(vlv_df, df_fraction):
     # calculate fit model
