@@ -259,12 +259,13 @@ if __name__ == '__main__':
     vav_results = pd.DataFrame.from_records(vav_results)
 
     numeric_cols = ['minimum_air_flow_cutoff', 'long_t', 'long_tbad', 'bad_ratio', 'long_to']
-    vav_results[numeric_cols] = vav_results[numeric_cols].apply(pd.to_numeric, errors='coerce')
+    avail_cols = list(set(vav_results.columns).intersection(set(numeric_cols)))
+    vav_results[avail_cols] = vav_results[avail_cols].apply(pd.to_numeric, errors='coerce')
+
     vav_results['folder_short'] = vav_results['folder'].apply(os.path.basename)
 
     # summary statistics for each site
     vav_results_grp = vav_results.groupby(['site', 'folder_short'])
     vav_results_grp['long_t'].describe()
-
 
     import pdb; pdb.set_trace()
