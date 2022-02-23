@@ -390,6 +390,20 @@ def calc_add_features(vav_df, drop_na=False, drop_neg_diff=False):
 
     return vav_df
 
+def determine_timestamp_interval(df):
+    """
+    Determine time interval for dataframe
+    """
+
+    ts = pd.Series(df.index)
+    ts_int = (ts - ts.shift(1))
+
+    int_freq = ts_int.value_counts()
+
+    window = int_freq.index[0]
+
+    return window
+
 
 def drop_unoccupied_dat(df, row=None, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=False, af_accu_factor=0.5):
     """
@@ -642,6 +656,26 @@ def sigmoid(x, k, x0):
     y_min=0
     return y_min + ((y_max - y_min) / (1 + np.exp(-k * (x - x0))))
 
+def sigmoid_prime(x, k, x0, y_max=1, y_min=0):
+    """
+    derivative of sigmoid function
+
+    Parameters
+    ----------
+    x: independent variable
+    k: slope of the sigmoid function
+    x0: midpoint/inflection point of the sigmoid function
+    y_max: maximum value of data
+    y_min: minimum value of data
+
+    Returns
+    -------
+    y: value of the function at point x
+    """
+    num = (y_max-y_min)*np.exp(-k * (x - x0))
+    den = (1 + np.exp(-k * (x - x0)))**2
+
+    return num/den
 
 def make_sigmoid_func(y_max=1, y_min=0):
 
@@ -793,11 +827,30 @@ def calc_long_t_diff(vlv_df):
 
     return long_t
 
-def analyze_timestamps(vlv_df, th_time, window, row=None, project_folder='./'):
+
+def check_consecutive_timestamps(df, window=None):
     """
-    Analyze timestamps and valve operation in a pandas dataframe to determine which row values 
-    are th_time minutes after a changed state e.g. determine which data corresponds
-    to steady-state and transient values.
+    Check if timestamps are consecutive in dataframe or series
+    Parameters
+    ----------
+    df: Pandas dataframe with valve timeseries data
+
+    Returns
+    -------
+    List: boolean lsit indicating if timestamps are consecutive
+    """
+    if window is None:
+        window = determine_timestamp_interval(df)
+
+    ts = pd.Series(df.index)
+    cons_ts = ((ts - ts.shift(-1)).abs() <= window) | (ts.diff() <= window)
+
+    return list(cons_ts)
+
+
+def analyze_timestamps(vlv_df, th_time, window=None):
+    """
+    Analyze timestamps to make sure they are consecutive
 
     Parameters
     ----------
@@ -809,26 +862,21 @@ def analyze_timestamps(vlv_df, th_time, window, row=None, project_folder='./'):
 
     window : aggregation window, in minutes, to average the raw measurement data
 
-    row: Pandas series object with metadata for the specific vav valve
-
-    project_folder: name of path for the project and used to save the plot.
-
     Returns
     -------
     vav_df: same input pandas dataframe but with added columns indicating:
         cons_ts: boolean indicating consecutive timestamps
         cons_ts_vlv_c: boolean indicating consecutive timestamps when valve is commanded closed
         same: boolean indicating group number of cons_ts_vlv_c
-        steady: boolean indicating if the timestamp is in steady state condition
     """
+    if window is None:
+        window = determine_timestamp_interval(vlv_df)
 
-    min_ts = int(th_time/window) + (th_time % window > 0)
-    min_tst = pd.Timedelta(th_time, unit='min')
+    window_int = window.seconds/60
+    min_ts = int(th_time/window_int) + (th_time % window_int > 0)
 
     # only get consecutive timestamps datapoints
-    ts = pd.Series(vlv_df.index)
-    ts_int = pd.Timedelta(window, unit='min')
-    cons_ts = ((ts - ts.shift(-1)).abs() <= ts_int) | (ts.diff() <= ts_int)
+    cons_ts = check_consecutive_timestamps(vlv_df, window)
 
     if (len(cons_ts) < min_ts) | ~(np.any(cons_ts)):
         return None
@@ -836,6 +884,34 @@ def analyze_timestamps(vlv_df, th_time, window, row=None, project_folder='./'):
     vlv_df.loc[:, 'cons_ts'] = np.array(cons_ts)
     vlv_df.loc[:, 'cons_ts_vlv_c'] = np.logical_and(~vlv_df['vlv_open'], vlv_df['cons_ts'])
     vlv_df.loc[:, 'same'] = vlv_df['cons_ts_vlv_c'].astype(int).diff().ne(0).cumsum()
+
+    return vlv_df
+
+
+def analyze_steady_vs_transient(vlv_df, row=None, project_folder='./'):
+    """
+    Analyze valve operation in a pandas dataframe to determine which row values 
+    are th_time minutes after a changed state e.g. determine which data corresponds
+    to steady-state and transient values.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    project_folder: name of path for the project and used to save the plot.
+
+    Returns
+    -------
+    vav_df: same input pandas dataframe but with added columns indicating:
+        steady: boolean indicating if the timestamp is in steady state condition
+    """
+
+    if vlv_df is None:
+        return None
+
+    min_tst = pd.Timedelta(th_time, unit='min')
 
     # subset by consecutive times that exceed th_time
     lal = vlv_df.groupby('same')
@@ -1135,7 +1211,7 @@ def density_data(dat, rescale_dat=None):
 
     return xs, ys
 
-def find_bad_vlv_operation(vlv_df, row, model, popt, window):
+def find_fault_vlv_operation(vlv_df, row, model, popt, window, th_bad_vlv):
     """
     Determine which timeseries values are data from probable passing valves and return 
     a pandas dataframe of only 'bad' values.
@@ -1162,18 +1238,37 @@ def find_bad_vlv_operation(vlv_df, row, model, popt, window):
             (X minutes defined in global parameter 'shrt_term_fail') due to control errors, 
             mechanical/electrical problems, or other. Default 60 minutes (1 hour).
     """
+    PROBABILITY = 0.16
+    window_int = window.seconds/60
 
     pass_type = dict()
     hi_diff = np.percentile(vlv_df.loc[vlv_df['vlv_open'], 'temp_diff'], 95)
 
     if model is not None:
-        vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
+        # # analyze sigmoid function
+        # y_max = max(vlv_df['temp_diff'])
+        # y_min = min(vlv_df['temp_diff'])
+        # sigmoid_func = make_sigmoid_func(y_max, y_min)
+        # max_model_diff = round(sigmoid_func(100, popt[0], popt[1]), 1)
+        # if max_model_diff > 2*th_bad_vlv:
+        #     x_prime = range(0,101,1)
+        #     y_prime = sigmoid_prime(x_prime, popt[0], popt[1], y_max, y_min)
+        #     y_prime_norm = y_prime/sum(y_prime)
 
-        # define temperature difference and valve position failure thresholds
-        vlv_po_th = vlv_po_hi_diff/2.0
-        diff_vlv_po_th = max(model[model['vlv_po'] <= vlv_po_th]['y_fitted'].max(), 5)
+        #     vlv_start_open = list(x_prime)[sum(np.cumsum(y_prime_norm) < PROBABILITY)]
+        #     diff_vlv_po_th = round(sigmoid_func(vlv_start_open, popt[0], popt[1]), 1)
+        # else:
+        tdiff_model_max = model[model['vlv_po'] == 100]['y_fitted'].mean()
+        if tdiff_model_max > 2*th_bad_vlv:
+            vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
+
+            # define temperature difference and valve position failure thresholds
+            vlv_po_th = vlv_po_hi_diff/2.0
+            diff_vlv_po_th = max(model[model['vlv_po'] <= vlv_po_th]['y_fitted'].max(), th_bad_vlv)
+        else:
+            diff_vlv_po_th = max(hi_diff/4.0, th_bad_vlv)
     else:
-        diff_vlv_po_th = max(hi_diff/4.0, 5)
+        diff_vlv_po_th = max(hi_diff/4.0, th_bad_vlv)
 
     # find datapoints that exceed long-term temperature difference
     exceed_long_t = vlv_df['temp_diff'] >= diff_vlv_po_th
@@ -1186,39 +1281,39 @@ def find_bad_vlv_operation(vlv_df, row, model, popt, window):
     if df_bad.empty:
         return None, dict()
 
+    # check that timestamps are consecutive in df_bad
+    df_bad_cons_ts = check_consecutive_timestamps(df_bad, window)
+    df_bad['cons_ts_fault_vlv'] = df_bad_cons_ts
+
     # analyze 'bad' dataframe for possible passing valve
-    bad_grp = df_bad.groupby('same')
+    #bad_grp = df_bad.groupby('same')
+    bad_grp = df_bad.loc[df_bad['cons_ts_fault_vlv'], :].groupby(['same', 'cons_ts_fault_vlv'])
+
+    bad_grp = df_bad.groupby(['same', 'cons_ts_fault_vlv'])
     bad_grp_count = bad_grp['same'].count()
 
-    # max_idx = np.argmax(bad_grp_count)
-    # max_grp = bad_grp.groups[bad_grp_count.index[max_idx]]
+    idx_const_vals = bad_grp_count.index.get_level_values("cons_ts_fault_vlv").values
+    if not any(idx_const_vals):
+        # not bad values with consecutive timestamps found
+        return df_bad, pass_type
 
-    # if len(max_grp) > 1:
-    #     max_passing_time = max_grp[-1] - max_grp[0]
-    # else:
-    #     max_passing_time = pd.Timedelta(0, unit='min')
-
-    # # detect long term failures
-    # if max_passing_time > pd.Timedelta(long_term_fail, unit='min'):
-    #     ts_seconds = max_passing_time.seconds
-    #     ts_days    = max_passing_time.days * 3600 * 24
-    #     pass_type['long_term_fail'] = (ts_days+ts_seconds)/60.0
+    bad_grp_count_cons_ts = bad_grp_count[(slice(None), True)]
 
     # detect long term failures
-    long_term_fail_bool = (bad_grp_count*window) > long_term_fail
+    long_term_fail_bool = (bad_grp_count_cons_ts*window_int) > long_term_fail
     if any(long_term_fail_bool):
-        long_term_fail_times = bad_grp_count[long_term_fail_bool]*window
+        long_term_fail_times = bad_grp_count_cons_ts[long_term_fail_bool]*window_int
         if long_term_fail_times.count() >= 1 or long_term_fail_times.index[-1] == vlv_df['same'].max():
-            dates = [(bad_grp.groups[ky][0], bad_grp.groups[ky][-1]) for ky in long_term_fail_times.index]
+            dates = [(bad_grp.groups[(ky, True)][0], bad_grp.groups[(ky, True)][-1]) for ky in long_term_fail_times.index.values]
             pass_type['long_term_fail'] = (long_term_fail_times.mean(), long_term_fail_times.count(), dates)
 
     # detect short term failures
-    bad_grp_left_over = bad_grp_count[~long_term_fail_bool]
-    short_term_fail_bool = (bad_grp_left_over*window) > shrt_term_fail
+    bad_grp_left_over = bad_grp_count_cons_ts[~long_term_fail_bool]
+    short_term_fail_bool = (bad_grp_left_over*window_int) > shrt_term_fail
     if any(short_term_fail_bool):
-        shrt_term_fail_times = bad_grp_left_over[short_term_fail_bool]*window
+        shrt_term_fail_times = bad_grp_left_over[short_term_fail_bool]*window_int
         if shrt_term_fail_times.count() >= 2 or (shrt_term_fail_times.count() >= 1 and any(long_term_fail_bool)):
-            dates = [(bad_grp.groups[ky][0], bad_grp.groups[ky][-1]) for ky in shrt_term_fail_times.index]
+            dates = [(bad_grp.groups[(ky, True)][0], bad_grp.groups[(ky, True)][-1]) for ky in shrt_term_fail_times.index.values]
             pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count(), dates)
 
     return df_bad, pass_type
@@ -1274,8 +1369,9 @@ def clean_final_report(final_df, drop_null=True):
             # drop redundant columns
             final_df = final_df.drop(columns=['short_term_fail'])
 
+        avail_cols = list(set(final_df.columns).intersection(set(['long_term_fail_avg_minutes', 'short_term_fail_avg_minutes'])))
         # sort by highest value faults
-        final_df = final_df.sort_values(by=['long_term_fail_avg_minutes', 'short_term_fail_avg_minutes'], ascending=False)
+        final_df = final_df.sort_values(by=avail_cols, ascending=False)
 
     return final_df
 
@@ -1363,7 +1459,7 @@ def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
 
     return pass_type, row
 
-def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folder='./', detection_params=None):
+def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', detection_params=None):
     """
     Analyze each valve and detect for passing valves
 
@@ -1378,8 +1474,6 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     th_time: length of time, in minutes, after the valve is closed to determine if 
         valve operating point is malfunctioning e.g. allow enough time for residue heat to
         dissipate from the coil.
-
-    window: aggregation window, in minutes, to average the raw measurement data
 
     project_folder: name of path for the project and used to save the plots and csv data.
 
@@ -1409,6 +1503,9 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     # calculate additional parameters for analysis
     vlv_df = calc_add_features(vlv_df, drop_na=False)
 
+    # find timestamp interval for dataset
+    window = determine_timestamp_interval(vlv_df)
+
     # check for empty dataframe
     if vlv_df.empty:
         message = "'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site'])
@@ -1420,7 +1517,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
 
 
     # Analyze timestamps and valve operation changes
-    vlv_df = analyze_timestamps(vlv_df, th_time, window, row=row, project_folder=project_folder)
+    vlv_df = analyze_timestamps(vlv_df, th_time, window)
+    vlv_df = analyze_steady_vs_transient(vlv_df, row=row, project_folder=project_folder)
 
     if vlv_df is None:
         print("'{}' in site {} has no data after analyzing \
@@ -1498,24 +1596,26 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     df_fit_nz, popt = build_logistic_model(no_zeros_po)
 
     # calculate bad valve instances vs overall dataframe
-    bad_vlv, pass_type = find_bad_vlv_operation(vlv_df, row, df_fit_nz, popt, window)
+    fault_vlv, pass_type = find_fault_vlv_operation(vlv_df, row, df_fit_nz, popt, window, th_bad_vlv)
     passing_type.update(pass_type)
 
-    if bad_vlv is None:
+    if fault_vlv is None:
         bad_ratio = 0
         long_tbad = None# long_tc['50%']
     else:
-        bad_ratio = 100*(bad_vlv.shape[0]/vlv_df.shape[0])
-        long_tbad = bad_vlv['temp_diff'].describe()['50%']
+        bad_ratio = 100*(fault_vlv.shape[0]/vlv_df.shape[0])
+        long_tbad = fault_vlv['temp_diff'].describe()['50%']
+
+    BAD_RATIO_THRESHOLD = 5
 
     # estimate size of leak in terms of pct that valve is open
-    if df_fit_nz is not None:
+    if df_fit_nz is not None and long_tbad is not None:
         est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
-        if est_leak > popt[1]:
+        if est_leak > popt[1] and bad_ratio > BAD_RATIO_THRESHOLD:
             passing_type['leak_grtr_xovr_fail'] = est_leak
     else:
-        if bad_vlv is not None:
-            est_leak = bad_vlv['temp_diff'].mean()
+        if fault_vlv is not None:
+            est_leak = long_tbad
             if est_leak > th_bad_vlv:
                 passing_type['leak_grtr_threshold_fail'] = est_leak
 
@@ -1525,24 +1625,24 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, window=15, project_folde
     elif 'long_term_fail' in passing_type.keys():
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
-    elif any(failure) and bad_ratio > 5:
+    elif any(failure) and bad_ratio > BAD_RATIO_THRESHOLD:
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
     else:
         folder = join(project_folder, good_folder)
 
-        # categorized good and bad points
+    # categorized good and bad points
     vlv_df.loc[:, 'good_oper_cat'] = True
-    if bad_vlv is not None:
-        vlv_df.loc[bad_vlv.index, 'good_oper_cat'] = False
+    if fault_vlv is not None:
+        vlv_df.loc[fault_vlv.index, 'good_oper_cat'] = False
 
     _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
     row.update({'long_t': round(long_tc['50%'], 2), 'long_tbad': None if long_tbad is None else round(long_tbad, 2), 'bad_ratio': round(bad_ratio, 2), 'folder': folder})
 
     # TODO get a detailed report of the when valve is malfunctioning
-    # lal = bad_vlv.groupby('same')
+    # lal = fault_vlv.groupby('same')
     # grps = list(lal.groups.keys())
-    # bad_vlv.loc[lal.groups[grps[0]]]
+    # fault_vlv.loc[lal.groups[grps[0]]]
 
     if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
 

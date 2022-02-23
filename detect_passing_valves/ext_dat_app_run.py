@@ -176,7 +176,6 @@ if __name__ == '__main__':
     detection_params = {
         "th_bad_vlv": 10,           # temperature difference from long term temperature difference to consider an operating point as malfunctioning
         "th_time": 12,             # length of time, in minutes, after the valve is closed to determine if valve operating point is malfunctioning
-        "window": 15,              # aggregation window, in minutes, to average the raw measurement data
         "long_term_fail": 4*60,    # number of minutes to trigger an long-term passing valve failure
         "shrt_term_fail": 60,      # number of minutes to trigger an intermitten passing valve failure
         "th_vlv_fail": 20,         # equivalent percentage of valve open for determining failure.
@@ -208,7 +207,7 @@ if __name__ == '__main__':
         # define variables
         vlv_dat = dict(row)
         # run passing valve detection algorithm
-        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=12, window=5, project_folder=project_folder, detection_params=detection_params)
+        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=12, project_folder=project_folder, detection_params=detection_params)
 
         # save results
         vlv_dat.update(passing_type)
