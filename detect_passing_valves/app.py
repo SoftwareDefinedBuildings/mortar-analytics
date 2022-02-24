@@ -382,7 +382,7 @@ def calc_add_features(vav_df, drop_na=False, drop_neg_diff=False):
 
     # drop na
     if drop_na:
-        vav_df = vav_df.dropna()
+        vav_df = vav_df.dropna(subset=['dnstream_ta', 'upstream_ta'])
 
     # drop values where vav supply air temperature is less than ahu supply air
     if drop_neg_diff:
@@ -431,34 +431,38 @@ def drop_unoccupied_dat(df, row=None, occ_str=6, occ_end=18, wkend_str=5, air_fl
     df: Pandas dataframe with data values during building occupancy hours
     """
 
-
     if 'air_flow' in df.columns:
         # drop values where there is no air flow
-        xs, ys = density_data(df['air_flow'], rescale_dat=df['temp_diff'])
-        min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
-        max_idx = return_extreme_points(ys, type_of_extreme='max', sort=False)
+        density_df = df.loc[:, ['air_flow', 'temp_diff']].dropna()
 
-        if min_idx is not None:
-            low_air_flow = xs[min_idx[0]]
+        if not density_df.empty:
+            xs, ys = density_data(density_df['air_flow'], rescale_dat=density_df['temp_diff'])
+            min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
+            max_idx = return_extreme_points(ys, type_of_extreme='max', sort=False)
+
+            if min_idx is not None:
+                low_air_flow = xs[min_idx[0]]
+            else:
+                low_air_flow = np.percentile(xs, 5)
+
+            if max_idx is not None:
+                zero_air_flow = xs[max_idx[0]]
+            else:
+                zero_air_flow = 0
+
+            # take into account the accuracy of the airflow rate measurement if known
+            if af_accu_factor is not None:
+                min_air_flow = (1-af_accu_factor)*(low_air_flow-zero_air_flow) + zero_air_flow
+            else:
+                min_air_flow = low_air_flow
+
+            # return calculated results
+            if row is not None:
+                row.update({"minimum_air_flow_cutoff": round(min_air_flow,1)})
+
+            df = df.loc[df['air_flow'] > min_air_flow]
         else:
-            low_air_flow = np.percentile(xs, 5)
-
-        if max_idx is not None:
-            zero_air_flow = xs[max_idx[0]]
-        else:
-            zero_air_flow = 0
-
-        # take into account the accuracy of the airflow rate measurement if known
-        if af_accu_factor is not None:
-            min_air_flow = (1-af_accu_factor)*(low_air_flow-zero_air_flow) + zero_air_flow
-        else:
-            min_air_flow = low_air_flow
-
-        # return calculated results
-        if row is not None:
-            row.update({"minimum_air_flow_cutoff": round(min_air_flow,1)})
-
-        df = df.loc[df['air_flow'] > min_air_flow]
+            df = occupied_hours_subset(df, occ_str, occ_end, wkend_str)
     elif 'air_flow' not in df.columns and air_flow_required:
         df = pd.DataFrame()
     else:
@@ -1501,10 +1505,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
 
 
     # calculate additional parameters for analysis
-    vlv_df = calc_add_features(vlv_df, drop_na=False)
-
-    # find timestamp interval for dataset
-    window = determine_timestamp_interval(vlv_df)
+    vlv_df = calc_add_features(vlv_df, drop_na=True)
 
     # check for empty dataframe
     if vlv_df.empty:
@@ -1515,8 +1516,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
         if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
         return passing_type
 
-
     # Analyze timestamps and valve operation changes
+    window = determine_timestamp_interval(vlv_df)
     vlv_df = analyze_timestamps(vlv_df, th_time, window)
     vlv_df = analyze_steady_vs_transient(vlv_df, row=row, project_folder=project_folder)
 
