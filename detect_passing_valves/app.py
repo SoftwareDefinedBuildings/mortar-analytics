@@ -1264,6 +1264,7 @@ def find_fault_vlv_operation(vlv_df, row, model, popt, window, th_bad_vlv):
         # else:
         tdiff_model_max = model[model['vlv_po'] == 100]['y_fitted'].mean()
         if tdiff_model_max > 2*th_bad_vlv:
+            hi_diff = max(hi_diff, tdiff_model_max)
             vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
 
             # define temperature difference and valve position failure thresholds
@@ -1590,8 +1591,12 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
         passing_type['tc_to_close_fail'] = round(long_tc_to_diff, 2)
 
     # assume a 0 deg difference at 0% open valve
+    # and at 95 pct temp diff at > 95% percent open valve
     no_zeros_po = vlv_df.copy()
     no_zeros_po.loc[~no_zeros_po['vlv_open'], 'temp_diff'] = 0
+
+    hi_diff = np.percentile(vlv_df['temp_diff'], 100)
+    no_zeros_po.loc[no_zeros_po['vlv_po'] >= 95, 'temp_diff'] = hi_diff
 
     # make a logit regression model assuming that closed valves make a zero temp difference
     df_fit_nz, popt = build_logistic_model(no_zeros_po)
