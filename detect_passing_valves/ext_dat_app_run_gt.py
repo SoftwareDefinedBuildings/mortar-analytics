@@ -12,15 +12,14 @@ import pandas as pd
 import numpy as np
 import os
 import time
+import pickle
 
 from os.path import join
-import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
-from scipy.stats import gaussian_kde
 from itertools import combinations
 from copy import deepcopy
 
 from app import _analyze_vlv, check_folder_exist, clean_final_report
+from plot_data import *
 
 # from app import _make_tdiff_vs_aflow_plot, \
 #     analyze_timestamps, rename_existing, drop_unoccupied_dat, calc_long_t_diff, \
@@ -116,7 +115,7 @@ def read_multi_csvs(discharge_temp_file, airflow_rate_file, vlv_pos_file, room_t
             'vlv_dat': vlv_dat,
             'row': {
                 'vlv': 'vlv_' + vav_name,
-                'site': 'bldg_gt_pr',
+                'site': 'lion',
                 'equip': vav_name,
                 'upstream_type': None,
             }
@@ -175,9 +174,20 @@ def exclude_time_interval(df, int_str, int_end):
     return df.loc[~within_interval, :]
 
 
+def parse_dict_list_file(line):
+
+    dictionary = dict()
+    pairs = line.strip().strip(",").strip('{}').split(', ')
+    for pr in pairs:
+        pair = pr.split(': ')
+        dictionary[pair[0].strip('\'\'\"\"')] = pair[1].strip('\'\'\"\"')
+
+    return dictionary
+
+
 if __name__ == '__main__':
     dat_folder = join('./', 'external_data', 'bldg_gt_pr', '20211118')
-    project_folder = join('./', 'external_analysis', 'bldg_gt_pr', 'lg_4hr_shrt_1hr_test_no_off_period')
+    project_folder = join('./', 'external_analysis', 'bldg_gt_pr', 'lg_4hr_shrt_1hr_test_no_aflw_req')
 
     # read files
     discharge_temp_file = join(dat_folder, 'B44-B45 Discharge Air Temp Sensor Readings - 01MAY2021 to 10NOV2021.csv')
@@ -191,12 +201,14 @@ if __name__ == '__main__':
     # define container folders
     good_folder = 'good_valves'         # name of path to the folder to save the plots of the correct operating valves
     bad_folder = 'bad_valves'           # name of path to the folder to save the plots of the malfunction valves
+    sensor_fault_folder = 'sensor_fault'# name of path to the folder to save plots of equipment with sensor faults
     air_flow_folder = 'air_flow_plots'  # name of path to the folder to save plots of the air flow values
     csv_folder = 'csv_data'             # name of path to the folder to save detailed valve data
 
     # check if holding folders exist
     check_folder_exist(join(project_folder, bad_folder))
     check_folder_exist(join(project_folder, good_folder))
+    check_folder_exist(join(project_folder, sensor_fault_folder))
     check_folder_exist(join(project_folder, air_flow_folder))
     check_folder_exist(join(project_folder, csv_folder))
 
@@ -204,13 +216,13 @@ if __name__ == '__main__':
     detection_params = {
         "th_bad_vlv": 5,           # temperature difference from long term temperature difference to consider an operating point as malfunctioning
         "th_time": 12,             # length of time, in minutes, after the valve is closed to determine if valve operating point is malfunctioning
-        "window": 15,              # aggregation window, in minutes, to average the raw measurement data
         "long_term_fail": 4*60,    # number of minutes to trigger an long-term passing valve failure
         "shrt_term_fail": 60,      # number of minutes to trigger an intermitten passing valve failure
         "th_vlv_fail": 20,         # equivalent percentage of valve open for determining failure.
-        "air_flow_required": True, # boolean indicated is air flow rate data should strictly be used.
+        "air_flow_required": False, # boolean indicated is air flow rate data should strictly be used.
         "good_folder": good_folder,
         "bad_folder": bad_folder,
+        "sensor_fault_folder": sensor_fault_folder,
         "air_flow_folder": air_flow_folder,
         "csv_folder": csv_folder,
     }
@@ -219,6 +231,7 @@ if __name__ == '__main__':
     vavs_df = merge_down_up_stream_dat(vavs_df, ahu_file, matched_ahu_vav_file)
 
     results = []
+    vav_count_summary = []
     for key in vavs_df.keys():
         cur_vlv_df = vavs_df[key]['vlv_dat']
         required_streams = [stream in cur_vlv_df.columns for stream in ['dnstream_ta', 'upstream_ta', 'vlv_po']]
@@ -232,14 +245,65 @@ if __name__ == '__main__':
         # define variables
         vlv_dat = dict(row)
         # run passing valve detection algorithm
-        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=12, window=15, project_folder=project_folder, detection_params=detection_params)
+        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=12, project_folder=project_folder, detection_params=detection_params)
 
         # save results
         vlv_dat.update(passing_type)
         results.append(vlv_dat)
 
+    # report and plot
+    # define fault folders
+    fault_dat_path = join(project_folder, "passing_valve_results.csv")
+    fig_folder_faults = join(project_folder, "ts_valve_faults")
+    fig_folder_good = join(project_folder, "ts_valve_good")
+    post_process_vlv_dat = join(project_folder, "csv_data")
+    vav_count_file = join(project_folder, 'vav_count_summary.csv')
+    raw_analyzed_data = join(project_folder, 'raw_analyzed_data.pkl')
+    raw_analyzed_results = join(project_folder, 'raw_analyzed_results.pkl')
+
     final_df = pd.DataFrame.from_records(results)
     final_df = clean_final_report(final_df, drop_null=False)
-    final_df.to_csv(join(project_folder, "passing_valve_results.csv"))
+    final_df.to_csv(fault_dat_path)
+
+    vav_count_summary = pd.DataFrame.from_records(vav_count_summary)
+    vav_count_summary.to_csv(vav_count_file)
+
+    raw_df = open(raw_analyzed_data, "wb")
+    pickle.dump(vavs_df, raw_df)
+    raw_df.close()
+
+    raw_result = open(raw_analyzed_results, "wb")
+    pickle.dump(results, raw_result)
+    raw_result.close()
+
+    # create timeseries plots of the data
+    plot_fault_valves(post_process_vlv_dat, fault_dat_path, fig_folder_faults, time_format="Timestamp('%Y-%m-%d %H:%M:%S')")
+    plot_valve_ts_streams(post_process_vlv_dat, join(project_folder, sensor_fault_folder), sample_size='all', fig_folder=fig_folder_faults)
+
+    # plot good vav operation timeseries
+    plot_valve_ts_streams(post_process_vlv_dat, join(project_folder, good_folder), sample_size='all', fig_folder=fig_folder_good)
+
+    # Perform additional analysis
+    f = open(join(project_folder, 'minimum_airflow_values.txt'), 'r')
+    lines = f.readlines()
+    f.close()
+
+    vav_results = []
+    for line in lines:
+        vav_results.append(parse_dict_list_file(line))
+
+    vav_results = pd.DataFrame.from_records(vav_results)
+
+    numeric_cols = ['minimum_air_flow_cutoff', 'long_t', 'long_tbad', 'bad_ratio', 'long_to']
+    avail_cols = list(set(vav_results.columns).intersection(set(numeric_cols)))
+    vav_results[avail_cols] = vav_results[avail_cols].apply(pd.to_numeric, errors='coerce')
+    import pdb; pdb.set_trace()
+
+    na_folder = vav_results['folder'].isna()
+    vav_results.loc[~na_folder,'folder_short'] = vav_results.loc[~na_folder, 'folder'].apply(os.path.basename)
+
+    # summary statistics for each site
+    vav_results_grp = vav_results.groupby(['site', 'folder_short'])
+    vav_results_grp['long_t'].describe()
 
     import pdb; pdb.set_trace()
