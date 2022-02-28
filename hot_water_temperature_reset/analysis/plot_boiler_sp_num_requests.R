@@ -22,6 +22,7 @@ fig_type <- 'presentation_plot_area'
 plot_type <- 'png'
 
 select_dates <- ymd_hm(c('2021-12-01 16:00', '2021-12-03 09:00'))
+select_dates <- ymd_hm(c('2022-02-15 16:00', '2022-02-18 09:00'))
 ignore_req <- 2
 
 num_requests <- read_csv('./DATA/number_of_request.csv', 
@@ -66,10 +67,10 @@ req_plot <- num_requests %>%
   fig_format[[fig_type]][["fig_format"]] +
   geom_step(size=1.25, color='#3ed579') +
   geom_hline(yintercept=ignore_req, size=1.5, linetype='dashed', color='#d5793e') +
-  annotate('text', x=num_requests$Timestamp[30], y=ignore_req+.3, label='Ignored Requests', size=6, color='#d5793e') +
+  annotate('text', x=num_requests$Timestamp[200], y=ignore_req+.3, label='Ignored Requests', size=6, color='#d5793e') +
   theme(axis.title.x=element_blank()) +
   scale_x_datetime(date_breaks = "1 day", labels=date_format("%b %d")) +
-  scale_y_continuous(breaks = c(1,2,3))
+  scale_y_continuous(breaks = seq(1,10))
   
 
 fig_print_size = fig_format[[fig_type]][["fig_print_size"]]
