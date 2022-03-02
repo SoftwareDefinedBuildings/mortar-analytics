@@ -109,10 +109,12 @@ if __name__ == '__main__':
 
     results = []
     vav_count_summary = []
+    n_skipped = 0
     for key in vavs_df.keys():
         cur_vlv_df = vavs_df[key]['vlv_dat']
         required_streams = [stream in cur_vlv_df.columns for stream in ['dnstream_ta', 'upstream_ta', 'vlv_po']]
         if not all(required_streams):
+            n_skipped += 1
             print("Skipping VAV = {} because all required streams are not available".format(key))
             continue
 
@@ -124,7 +126,7 @@ if __name__ == '__main__':
         vlv_dat = dict(row)
 
         # run passing valve detection algorithm
-        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=12, window=15, project_folder=project_folder, detection_params=detection_params)
+        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=10, th_time=12, window=15, project_folder=project_folder, detection_params=detection_params)
 
         # save results
         vlv_dat.update(passing_type)
@@ -133,6 +135,7 @@ if __name__ == '__main__':
 
     # report and plot
     # define fault folders
+    print("Skipped a total of {} terminal units".format(n_skipped))
     fault_dat_path = join(project_folder, "passing_valve_results.csv")
     fig_folder_faults = join(project_folder, "ts_valve_faults")
     fig_folder_good = join(project_folder, "ts_valve_good")
