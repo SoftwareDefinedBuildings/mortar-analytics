@@ -153,21 +153,41 @@ def plot_fault_valves(vlv_dat_folder, fault_dat_path, fig_folder, time_format="T
 
     # get file paths of csvs
     all_csv_files = os.listdir(vlv_dat_folder)
+    fault_vlv_files = os.listdir(join(vlv_dat_folder, '../', 'bad_valves'))
 
     # read csv file with detected passing valves
     fault_dat = pd.read_csv(fault_dat_path, index_col=False)
 
     for idx, df_row in fault_dat.iterrows():
+        fault_dates = None
+        long_fault_dates = []
+        short_fault_dates = []
         if pd.notnull(df_row['long_term_fail_str_end_dates']):
-            fault_dates = df_row['long_term_fail_str_end_dates']
-            fault_dates = parse_list_timestamps(fault_dates, time_format=time_format)
-            vlv_name = "{}-{}-{}".format(df_row['site'], df_row['equip'], df_row['vlv'])
-            csv_names = [f for f in all_csv_files if vlv_name in f]
+            long_fault_dates = df_row['long_term_fail_str_end_dates']
+            long_fault_dates = parse_list_timestamps(long_fault_dates, time_format=time_format)
+        if pd.notnull(df_row['short_term_fail_str_end_dates']):
+            short_fault_dates = df_row['short_term_fail_str_end_dates']
+            short_fault_dates = parse_list_timestamps(short_fault_dates, time_format=time_format)
 
-            for csv in csv_names:
-                # plot fault data
-                csv_path = join(vlv_dat_folder, csv)
-                plot_valve_data(csv_path, fault_dates, fig_folder)
+        fault_idx = []
+        for fault_type in [long_fault_dates, short_fault_dates]:
+            for fault_interval in fault_type:
+                fault_idx.append(fault_interval)
+
+        if len(fault_idx) > 0:
+            fault_dates = fault_idx
+
+        vlv_name = "{}-{}-{}".format(df_row['site'], df_row['equip'], df_row['vlv'])
+        in_fault_folder = [f for f in fault_vlv_files if vlv_name in f]
+
+        if len(in_fault_folder) == 0:
+            continue
+        csv_names = [f for f in all_csv_files if vlv_name in f]
+
+        for csv in csv_names:
+            # plot fault data
+            csv_path = join(vlv_dat_folder, csv)
+            plot_valve_data(csv_path, fault_dates, fig_folder)
 
     print('-------Finished processing passing valve plots-----')
 
