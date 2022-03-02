@@ -832,6 +832,37 @@ def calc_long_t_diff(vlv_df):
     return long_t
 
 
+def calc_heat_transfer(df, window=None):
+    """
+    Calculate heat transfer from heating coils to air
+    """
+    RHO_AIR = 0.07516 # [lb/ft3] @20C at sea level
+    Cp_AIR = 0.2402 # [Btu/lb-F] @20C at sea level
+
+    if window is None:
+        window = determine_timestamp_interval(df)
+
+    window_int = window.seconds/3600
+
+    if 'air_flow' in df.columns:
+        temp_diff = df["temp_diff"]
+        air_flow = df["air_flow"]
+
+        heat_power_xfr = 60*RHO_AIR*Cp_AIR*air_flow*temp_diff # [Btu/hr]
+        heat_energy_xfr = heat_power_xfr*window_int
+    else:
+        return None
+
+    return (round(np.mean(heat_power_xfr), 1), round(sum(heat_energy_xfr), 1))
+
+
+def calc_long_tc_ratio(vlv_df):
+    close_vlv_df = vlv_df.loc[np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady'])]
+    long_tc_ratio = (close_vlv_df.shape[0]/vlv_df.shape[0])*100
+
+    return long_tc_ratio
+
+
 def check_consecutive_timestamps(df, window=None):
     """
     Check if timestamps are consecutive in dataframe or series
@@ -1040,6 +1071,9 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, long_to=
 
     # plot parametes
     y_max = vlv_df['temp_diff'].max()
+    y_min = vlv_df['temp_diff'].min()
+    x_max = vlv_df['vlv_po'].max()
+    x_min = vlv_df['vlv_po'].min()
 
     good_oper_color = '#5ab300'
     bad_oper_color = '#b3005a'
@@ -1049,7 +1083,8 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, long_to=
     ax.set_ylabel('Temperature difference [°F]')
     ax.set_xlabel('Valve opened [%]')
     ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left')
-    ax.set_ylim((0, np.ceil(y_max*1.05)))
+    ax.set_ylim((min(-2, y_min)*1.02, np.ceil(y_max*1.05)))
+    ax.set_xlim((min(-2, x_min)*1.02, max(100, x_max)*1.02))
 
 
     if any(vlv_df['good_oper_cat']):
@@ -1265,7 +1300,10 @@ def find_fault_vlv_operation(vlv_df, row, model, popt, window, th_bad_vlv):
         tdiff_model_max = model[model['vlv_po'] == 100]['y_fitted'].mean()
         if tdiff_model_max > 2*th_bad_vlv:
             hi_diff = max(hi_diff, tdiff_model_max)
-            vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
+            vlv_po_hi_diff = model[model['y_fitted'] >= hi_diff]['vlv_po'].mean()
+
+            if vlv_po_hi_diff in [np.nan, None]:
+                vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
 
             # define temperature difference and valve position failure thresholds
             vlv_po_th = vlv_po_hi_diff/2.0
@@ -1305,12 +1343,25 @@ def find_fault_vlv_operation(vlv_df, row, model, popt, window, th_bad_vlv):
     bad_grp_count_cons_ts = bad_grp_count[(slice(None), True)]
 
     # detect long term failures
+    # TODO: only calculate heat loss for fault timeperiods and not all of "df_bad"
+    long_fault = False
+    long_fault_idx = []
+    long_all_dates = []
+
+    short_fault = False
+    short_fault_idx = []
+    short_all_dates = []
+
     long_term_fail_bool = (bad_grp_count_cons_ts*window_int) > long_term_fail
     if any(long_term_fail_bool):
         long_term_fail_times = bad_grp_count_cons_ts[long_term_fail_bool]*window_int
         if long_term_fail_times.count() >= 1 or long_term_fail_times.index[-1] == vlv_df['same'].max():
-            dates = [(bad_grp.groups[(ky, True)][0], bad_grp.groups[(ky, True)][-1]) for ky in long_term_fail_times.index.values]
+            long_fault_idx = long_term_fail_times.index.values
+            long_all_dates = [bad_grp.groups[(ky, True)] for ky in long_fault_idx]
+            dates = [(ky[0], ky[-1]) for ky in long_all_dates]
+
             pass_type['long_term_fail'] = (long_term_fail_times.mean(), long_term_fail_times.count(), dates)
+            long_fault = True
 
     # detect short term failures
     bad_grp_left_over = bad_grp_count_cons_ts[~long_term_fail_bool]
@@ -1318,8 +1369,27 @@ def find_fault_vlv_operation(vlv_df, row, model, popt, window, th_bad_vlv):
     if any(short_term_fail_bool):
         shrt_term_fail_times = bad_grp_left_over[short_term_fail_bool]*window_int
         if shrt_term_fail_times.count() >= 2 or (shrt_term_fail_times.count() >= 1 and any(long_term_fail_bool)):
-            dates = [(bad_grp.groups[(ky, True)][0], bad_grp.groups[(ky, True)][-1]) for ky in shrt_term_fail_times.index.values]
+            short_fault_idx = shrt_term_fail_times.index.values
+            short_all_dates = [bad_grp.groups[(ky, True)] for ky in short_fault_idx]
+            dates = [(ky[0], ky[-1]) for ky in short_all_dates]
+
             pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count(), dates)
+            short_fault = True
+
+    if any([long_fault, short_fault]):
+        # # method 1 of filter fault data: assume all on of one switch is bad
+        # fault_idx = np.append(long_fault_idx, short_fault_idx)
+        # fault_points = df_bad['same'].isin(fault_idx)
+
+        # method 2 of filtering for fault data: more specific by using exact dates
+        fault_idx = []
+        for fault_type in [long_all_dates, short_all_dates]:
+            for fault_dates in fault_type:
+                for fault_ts in fault_dates:
+                    fault_idx.append(fault_ts)
+
+        fault_points = df_bad.index.isin(fault_idx)
+        pass_type['heat_loss_pwr-avg_nrgy-sum'] = calc_heat_transfer(df_bad.loc[fault_points], window)
 
     return df_bad, pass_type
 
@@ -1407,7 +1477,7 @@ def analyze_only_open(vlv_df, row, th_bad_vlv, project_folder):
     long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
     if long_to['50%'] < th_bad_vlv:
         print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vlv'], row['site']))
-        pass_type['non_responsive_fail'] = round(long_to['50%'] - th_bad_vlv, 2)
+        pass_type['non_responsive_fail_degF'] = round(long_to['50%'], 2)
         folder = join(project_folder, bad_folder)
         vlv_df.loc[:, 'good_oper_cat'] = False
         long_t = None
@@ -1419,6 +1489,7 @@ def analyze_only_open(vlv_df, row, th_bad_vlv, project_folder):
         long_tbad = None
 
     _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_to=long_t, long_tbad=long_tbad, folder=folder)
+    pass_type['folder'] = folder
     row.update({'long_to': round(long_to['50%'], 2), 'folder': folder})
 
     return pass_type, row
@@ -1445,9 +1516,12 @@ def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
     """
     pass_type = dict()
     long_tc = calc_long_t_diff(vlv_df)
+    long_tc_ratio = calc_long_tc_ratio(vlv_df)
+
     if long_tc['50%'] > th_bad_vlv:
         print_passing_mgs(row)
-        pass_type['simple_fail'] = round(long_tc['50%'] - th_bad_vlv, 2)
+        pass_type['simple_fail_dat-ratio_degF'] = (round(long_tc_ratio,1), round(long_tc['50%'], 2))
+
         folder = join(project_folder, bad_folder)
         vlv_df.loc[:, 'good_oper_cat'] = False
         long_t = None
@@ -1460,6 +1534,7 @@ def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
         if log_details: logger.info("[{}] is only closed with good operation data".format(row['vlv']))
 
     _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_t, long_tbad=long_tbad, folder=folder)
+    pass_type['folder'] = folder
     row.update({'long_t': round(long_tc['50%'], 2), 'folder': folder})
 
     return pass_type, row
@@ -1572,6 +1647,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
     long_tc = calc_long_t_diff(vlv_df)
     long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
 
+    long_tc_ratio = calc_long_tc_ratio(vlv_df)
+
     if long_tc is None and long_to is not None:
         pass_type, row = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
         passing_type.update(pass_type)
@@ -1582,7 +1659,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
     # make simple comparison of long-term closed temp difference and user define threshold
     if long_tc['50%'] > th_bad_vlv:
         print_passing_mgs(row)
-        passing_type['simple_fail'] = round(long_tc['50%'] - th_bad_vlv, 2)
+        #TODO make sure this gets flag as fault and put in bad folder
+        passing_type['simple_fail_dat-ratio_degF'] = (round(long_tc_ratio,1), round(long_tc['50%'], 2))
 
     # make comparison between long-term open and long-term closed temp difference
     long_tc_to_diff = (long_tc['mean'] + long_tc['std']) - (long_to['75%'])
@@ -1592,10 +1670,11 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
 
     # assume a 0 deg difference at 0% open valve
     # and at 95 pct temp diff at > 95% percent open valve
+    HI_DIFF_PERCENTILE = 95
     no_zeros_po = vlv_df.copy()
     no_zeros_po.loc[~no_zeros_po['vlv_open'], 'temp_diff'] = 0
 
-    hi_diff = np.percentile(vlv_df['temp_diff'], 100)
+    hi_diff = np.percentile(vlv_df['temp_diff'], HI_DIFF_PERCENTILE)
     no_zeros_po.loc[no_zeros_po['vlv_po'] >= 95, 'temp_diff'] = hi_diff
 
     # make a logit regression model assuming that closed valves make a zero temp difference
@@ -1618,20 +1697,23 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
     if df_fit_nz is not None and long_tbad is not None:
         est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
         if est_leak > popt[1] and bad_ratio > BAD_RATIO_THRESHOLD:
-            passing_type['leak_grtr_xovr_fail'] = est_leak
+            passing_type['leak_grtr_xovr_fail_vlv-pos'] = est_leak
     else:
         if fault_vlv is not None:
             est_leak = long_tbad
-            if est_leak > th_bad_vlv:
-                passing_type['leak_grtr_threshold_fail'] = est_leak
+            if est_leak > th_bad_vlv and bad_ratio > BAD_RATIO_THRESHOLD:
+                passing_type['leak_grtr_threshold_fail_degF'] = est_leak
 
-    failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail', 'leak_grtr_threshold_fail'] for x in passing_type.keys()]
-    if len([x for x in passing_type.keys() if 'sensor_fault' in x]):
+    failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail_vlv-pos', 'leak_grtr_threshold_fail_degF'] for x in passing_type.keys()]
+    if len([x for x in passing_type.keys() if 'sensor_fault' in x]) > 0:
         folder = join(project_folder, sensor_fault_folder)
     elif 'long_term_fail' in passing_type.keys():
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
-    elif any(failure) and bad_ratio > BAD_RATIO_THRESHOLD:
+    elif any(failure) and (bad_ratio > BAD_RATIO_THRESHOLD):
+        print_passing_mgs(row)
+        folder = join(project_folder, bad_folder)
+    elif 'simple_fail_dat-ratio_degF' in passing_type.keys() and (long_tc_ratio > BAD_RATIO_THRESHOLD):
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
     else:
@@ -1643,12 +1725,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
         vlv_df.loc[fault_vlv.index, 'good_oper_cat'] = False
 
     _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
+    pass_type['folder'] = folder
     row.update({'long_t': round(long_tc['50%'], 2), 'long_tbad': None if long_tbad is None else round(long_tbad, 2), 'bad_ratio': round(bad_ratio, 2), 'folder': folder})
-
-    # TODO get a detailed report of the when valve is malfunctioning
-    # lal = fault_vlv.groupby('same')
-    # grps = list(lal.groups.keys())
-    # fault_vlv.loc[lal.groups[grps[0]]]
 
     if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
 
