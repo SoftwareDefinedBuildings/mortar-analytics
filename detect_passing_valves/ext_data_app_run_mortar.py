@@ -73,7 +73,7 @@ def parse_dict_list_file(line):
 
 if __name__ == '__main__':
     dat_folder = join('with_airflow_checks_year_start', 'csv_data')
-    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_no_aflw_req')
+    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_no_aflw_req_10C_threshold')
 
     # define container folders
     good_folder = 'good_valves'         # name of path to the folder to save the plots of the correct operating valves
@@ -90,14 +90,15 @@ if __name__ == '__main__':
     check_folder_exist(join(project_folder, csv_folder))
 
     # define user parameters
+    TH_BAD_VLV = 10
     detection_params = {
-        "th_bad_vlv": 10,           # temperature difference from long term temperature difference to consider an operating point as malfunctioning
+        "th_bad_vlv": TH_BAD_VLV,           # temperature difference from long term temperature difference to consider an operating point as malfunctioning
         "th_time": 12,             # length of time, in minutes, after the valve is closed to determine if valve operating point is malfunctioning
-        "window": 15,              # aggregation window, in minutes, to average the raw measurement data
         "long_term_fail": 4*60,    # number of minutes to trigger an long-term passing valve failure
         "shrt_term_fail": 60,      # number of minutes to trigger an intermitten passing valve failure
         "th_vlv_fail": 20,         # equivalent percentage of valve open for determining failure.
         "air_flow_required": False, # boolean indicated is air flow rate data should strictly be used.
+        "af_accu_factor": 0.80,
         "good_folder": good_folder,
         "bad_folder": bad_folder,
         "sensor_fault_folder": sensor_fault_folder,
@@ -126,7 +127,7 @@ if __name__ == '__main__':
         vlv_dat = dict(row)
 
         # run passing valve detection algorithm
-        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=10, th_time=12, window=15, project_folder=project_folder, detection_params=detection_params)
+        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=TH_BAD_VLV, th_time=12, project_folder=project_folder, detection_params=detection_params)
 
         # save results
         vlv_dat.update(passing_type)
@@ -169,7 +170,6 @@ if __name__ == '__main__':
 
     # plot good vav operation timeseries
     plot_valve_ts_streams(post_process_vlv_dat, join(project_folder, good_folder), sample_size='all', fig_folder=fig_folder_good)
-    import pdb; pdb.set_trace()
 
     # Perform additional analysis
     f = open(join(project_folder, 'minimum_airflow_values.txt'), 'r')

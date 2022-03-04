@@ -9,6 +9,7 @@ The data needed to run application are the following:
 """
 
 import pandas as pd
+from ext_dat_app_run_gt import TH_BAD_VLV
 import numpy as np
 import os
 import time
@@ -146,7 +147,7 @@ def parse_dict_list_file(line):
 if __name__ == '__main__':
     # NOTE: HW plant off from August 31 to October 7 2021
     dat_folder = join('./', 'external_data', 'bldg_trc_rs')
-    project_folder = join('./', 'external_analysis', 'bldg_trc_rs', 'lg_4hr_shrt_1hr_test_no_aflw_req')
+    project_folder = join('./', 'external_analysis', 'bldg_trc_rs', 'lg_4hr_shrt_1hr_test_no_aflw_req_10C_threshold')
 
     csv_list = [
         join(dat_folder, 'zone trends, September 2021.csv'),
@@ -173,13 +174,15 @@ if __name__ == '__main__':
     check_folder_exist(join(project_folder, csv_folder))
 
     # define user parameters
+    TH_BAD_VLV = 10
     detection_params = {
-        "th_bad_vlv": 10,           # temperature difference from long term temperature difference to consider an operating point as malfunctioning
+        "th_bad_vlv": TH_BAD_VLV,           # temperature difference from long term temperature difference to consider an operating point as malfunctioning
         "th_time": 12,             # length of time, in minutes, after the valve is closed to determine if valve operating point is malfunctioning
         "long_term_fail": 4*60,    # number of minutes to trigger an long-term passing valve failure
         "shrt_term_fail": 60,      # number of minutes to trigger an intermitten passing valve failure
         "th_vlv_fail": 20,         # equivalent percentage of valve open for determining failure.
         "air_flow_required": False, # boolean indicated is air flow rate data should strictly be used.
+        "af_accu_factor": 0.80,
         "good_folder": good_folder,
         "bad_folder": bad_folder,
         "sensor_fault_folder": sensor_fault_folder,
@@ -207,7 +210,7 @@ if __name__ == '__main__':
         # define variables
         vlv_dat = dict(row)
         # run passing valve detection algorithm
-        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=10, th_time=12, project_folder=project_folder, detection_params=detection_params)
+        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=TH_BAD_VLV, th_time=12, project_folder=project_folder, detection_params=detection_params)
 
         # save results
         vlv_dat.update(passing_type)
