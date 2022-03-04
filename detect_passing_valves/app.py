@@ -440,21 +440,7 @@ def drop_unoccupied_dat(df, row=None, occ_str=6, occ_end=18, wkend_str=5, air_fl
             min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
             max_idx = return_extreme_points(ys, type_of_extreme='max', sort=False)
 
-            if min_idx is not None:
-                low_air_flow = xs[min_idx[0]]
-            else:
-                low_air_flow = np.percentile(xs, 5)
-
-            if max_idx is not None:
-                zero_air_flow = xs[max_idx[0]]
-            else:
-                zero_air_flow = 0
-
-            # take into account the accuracy of the airflow rate measurement if known
-            if af_accu_factor is not None:
-                min_air_flow = (1-af_accu_factor)*(low_air_flow-zero_air_flow) + zero_air_flow
-            else:
-                min_air_flow = low_air_flow
+            min_air_flow = calc_min_air_flow_cutoff(xs, max_idx, min_idx, af_accu_factor)
 
             # return calculated results
             if row is not None:
@@ -474,6 +460,27 @@ def drop_unoccupied_dat(df, row=None, occ_str=6, occ_end=18, wkend_str=5, air_fl
         return df, row
     else:
         return df
+
+
+def calc_min_air_flow_cutoff(xs, max_idx, min_idx, af_accu_factor=None):
+
+    if min_idx is not None:
+        low_air_flow = xs[min_idx[0]]
+    else:
+        low_air_flow = np.percentile(xs, 5)
+
+    if max_idx is not None:
+        zero_air_flow = xs[max_idx[0]]
+    else:
+        zero_air_flow = 0
+
+    # take into account the accuracy of the airflow rate measurement if known
+    if af_accu_factor is not None:
+        min_air_flow = (1-af_accu_factor)*(low_air_flow-zero_air_flow) + zero_air_flow
+    else:
+        min_air_flow = low_air_flow
+
+    return min_air_flow
 
 
 def get_vav_flow(fetch_resp_vav, row, fillna=None):
@@ -1100,7 +1107,7 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, long_to=
 
     if df_fit is not None:
         # add fit line
-        ax.plot(df_fit['vlv_po'], df_fit['y_fitted'], '--', label='Fitted valve model', color='#5900b3')
+        ax.plot(df_fit['vlv_po'], df_fit['y_fitted'], linestyle = '--', label='Fitted valve model', color='#5900b3')
 
     if long_t is not None:
         # add long-term temperature diff
@@ -1148,7 +1155,7 @@ def rename_existing(path, idx, row):
 
     return path
 
-def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
+def _make_tdiff_vs_aflow_plot(vlv_df, row, folder, af_accu_factor=None):
     """
     Create temperature difference versus air flow plots
 
@@ -1187,19 +1194,25 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder):
 
     # create density plot for air flow
     xs, ys = density_data(vlv_df['air_flow'], rescale_dat=vlv_df['temp_diff'])
-    ax.plot(xs, ys)
+    ax.plot(xs, ys, label='KDE')
 
     # find modes of the distribution and the trough before/after the modes
-    max_idx = return_extreme_points(ys, type_of_extreme='max', n_modes=2)
+    # max_idx = return_extreme_points(ys, type_of_extreme='max', n_modes=2)
+    max_idx = return_extreme_points(ys, type_of_extreme='max', sort=False)
     min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
 
+    if af_accu_factor is not None:
+        min_air_flow = calc_min_air_flow_cutoff(xs, max_idx, min_idx, af_accu_factor)
+        # plot vertical line
+        ax.axvline(x=round(min_air_flow,1), color='gray', linestyle = '--', label='Minimum operation cutoff')
+
     if max_idx is not None:
-        ax.scatter(x=xs[max_idx], y=ys[max_idx], color = '#ff0000', alpha=1, s=35)
+        ax.scatter(x=xs[max_idx], y=ys[max_idx], color = '#ff0000', alpha=1, s=35, label='Peaks')
     if max_idx is not None:
-        ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35)
+        ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35, label='Throughs')
 
     # Legend
-    ax.legend(markerscale=2)
+    ax.legend(fontsize=6, markerscale=1, borderaxespad=0., ncol=2, bbox_to_anchor=(.50, 1.02), loc='lower left')
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
     full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
@@ -1614,11 +1627,10 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
 
     if 'air_flow' in vlv_df.columns:
         # plot temp diff vs air flow
-        _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'))
-
+        _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'), af_accu_factor=af_accu_factor)
 
     # drop data that occurs during unoccupied hours
-    vlv_df, row = drop_unoccupied_dat(vlv_df, row=row, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=air_flow_required)
+    vlv_df, row = drop_unoccupied_dat(vlv_df, row=row, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=air_flow_required, af_accu_factor=af_accu_factor)
 
     if vlv_df.empty:
         print("'{}' in site {} has no data after hours of \
