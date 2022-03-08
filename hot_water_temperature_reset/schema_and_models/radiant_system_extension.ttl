@@ -1,0 +1,32 @@
+@prefix brick: <https://brickschema.org/schema/Brick#> .
+@prefix tag: <https://brickschema.org/schema/BrickTag#> .
+@prefix ext: <https://example.com/schema/BrickExtension#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+
+brick:Embedded_Temperature_Setpoint a owl:Class ;
+    rdfs:label "Embedded Temperature Setpoint" ;
+    rdfs:subClassOf [ a owl:Class ;
+            owl:intersectionOf ( _:has_Point _:has_Embedded _:has_Temperature _:has_Setpoint ) ],
+        brick:Temperature_Setpoint ;
+    skos:definition "Sets temperature inside a material"@en ;
+    brick:hasAssociatedTag tag:Embedded,
+        tag:Point,
+        tag:Setpoint,
+        tag:Temperature .
+
+
+brick:Embedded_Temperature_Sensor a owl:Class ;
+    rdfs:label "Embedded Temperature Sensor" ;
+    rdfs:subClassOf [ a owl:Class ;
+            owl:intersectionOf ( _:has_Point [ a owl:Restriction ;
+                        owl:hasValue tag:Embedded ;
+                        owl:onProperty brick:hasTag ] _:has_Temperature _:has_Sensor ) ],
+        brick:Temperature_Sensor ;
+    skos:definition "Measures temperature inside a material"@en ;
+    brick:hasAssociatedTag tag:Embedded,
+        tag:Point,
+        tag:Sensor,
+        tag:Temperature .

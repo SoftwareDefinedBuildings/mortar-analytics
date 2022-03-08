@@ -1,0 +1,6 @@
+pymortar==1.0.9a2
+pandas>=1.1
+numpy>=1.19.0
+matplotlib>=3.0.3
+scipy>=1.5.2
+bokeh>=2.2.3

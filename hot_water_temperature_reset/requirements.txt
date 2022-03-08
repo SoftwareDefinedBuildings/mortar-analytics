@@ -1,0 +1,11 @@
+brickschema
+brickschema[reasonable]
+bacpypes
+ConfigParser
+pandas
+numpy
+matplotlib
+scipy
+spicy
+lxml
+Cython
