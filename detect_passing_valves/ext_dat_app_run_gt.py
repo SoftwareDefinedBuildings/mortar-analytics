@@ -221,7 +221,7 @@ if __name__ == '__main__':
         "shrt_term_fail": 60,      # number of minutes to trigger an intermitten passing valve failure
         "th_vlv_fail": 20,         # equivalent percentage of valve open for determining failure.
         "air_flow_required": False, # boolean indicated is air flow rate data should strictly be used.
-        "af_accu_factor": 0.80,
+        "af_accu_factor": 0.60,
         "good_folder": good_folder,
         "bad_folder": bad_folder,
         "sensor_fault_folder": sensor_fault_folder,
