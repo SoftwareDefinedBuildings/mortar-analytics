@@ -162,12 +162,18 @@ def plot_fault_valves(vlv_dat_folder, fault_dat_path, fig_folder, time_format="T
         fault_dates = None
         long_fault_dates = []
         short_fault_dates = []
-        if pd.notnull(df_row['long_term_fail_str_end_dates']):
+        if 'long_term_fail_str_end_dates' in df_row.keys():
             long_fault_dates = df_row['long_term_fail_str_end_dates']
-            long_fault_dates = parse_list_timestamps(long_fault_dates, time_format=time_format)
-        if pd.notnull(df_row['short_term_fail_str_end_dates']):
+            if pd.notnull(long_fault_dates):
+                long_fault_dates = parse_list_timestamps(long_fault_dates, time_format=time_format)
+            else:
+                long_fault_dates = []
+        if 'short_term_fail_str_end_dates' in df_row.keys():
             short_fault_dates = df_row['short_term_fail_str_end_dates']
-            short_fault_dates = parse_list_timestamps(short_fault_dates, time_format=time_format)
+            if pd.notnull(short_fault_dates):
+                short_fault_dates = parse_list_timestamps(short_fault_dates, time_format=time_format)
+            else:
+                short_fault_dates = []
 
         fault_idx = []
         for fault_type in [long_fault_dates, short_fault_dates]:
