@@ -390,6 +390,27 @@ def calc_add_features(vav_df, drop_na=False, drop_neg_diff=False):
 
     return vav_df
 
+
+def calc_smooth_temp_diff(vlv_df):
+    """
+    Calculate smoothed temperature difference
+    """
+    alpha = 0.98
+    dn_stream_temp = vlv_df["dnstream_ta"]
+    up_stream_temp = vlv_df["upstream_ta"]
+
+    smooth_diff = []
+    smooth_t = vlv_df[vlv_df["cons_ts"], "temp_diff"][0]
+    for ts in range(len(dn_stream_temp)):
+        if vlv_df["cons_ts"][ts]:
+            smooth_t = alpha*smooth_t + (1-alpha)*(dn_stream_temp[ts] - up_stream_temp[ts])
+
+        smooth_diff.append(smooth_t)
+
+    vlv_df["smooth_temp_diff"] = smooth_diff
+    vlv_df.loc[~vlv_df["cons_ts"], "smooth_temp_diff"] = np.nan
+
+
 def determine_timestamp_interval(df):
     """
     Determine time interval for dataframe
@@ -715,6 +736,9 @@ def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff', scaled=False):
     popt: an array of the optimized parameters, slope and inflection point of the sigmoid function
     """
 
+    # remove nan from data
+    df = df.dropna(subset=[x_col, y_col])
+
     try:
         # fit the curve
         if scaled:
@@ -741,7 +765,8 @@ def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff', scaled=False):
             y_fitted.name = 'y_fitted'
 
         # make sure model goes from 0 to 100 percent
-        x_ext_vals = range(0,105,5)
+        model_interval = 1
+        x_ext_vals = range(0,100+model_interval,model_interval)
         y_ext_vals = sigmoid_func(x_ext_vals, est_k, est_x0)
         df_ext = pd.DataFrame({'vlv_po': x_ext_vals, 'y_fitted': y_ext_vals})
 
@@ -839,9 +864,21 @@ def calc_long_t_diff(vlv_df):
     return long_t
 
 
-def calc_heat_transfer(df, window=None):
+def calc_heat_transfer(df, long_term_temp_diff=None, window=None):
     """
     Calculate heat transfer from heating coils to air
+
+    Parameters
+    ----------
+    df: pandas dataframe containing the columns 
+        "air_flow" (airflow rate in cubic feet per second) and
+        "temp_diff" (temperature difference [Tsuppy_vav - Tsupply_ahu])
+
+    long_term_temp_diff: average temperature difference when vav reheat
+        valve is closed
+
+    window: pandas timedelta object indicating timestamp interval
+
     """
     RHO_AIR = 0.07516 # [lb/ft3] @20C at sea level
     Cp_AIR = 0.2402 # [Btu/lb-F] @20C at sea level
@@ -851,12 +888,18 @@ def calc_heat_transfer(df, window=None):
 
     window_int = window.seconds/3600
 
+    temp_diff = df["temp_diff"]
+    if long_term_temp_diff is not None:
+        delta_temp = (temp_diff-long_term_temp_diff)
+    else:
+        delta_temp = temp_diff
+
     if 'air_flow' in df.columns:
         temp_diff = df["temp_diff"]
         air_flow = df["air_flow"]
 
-        heat_power_xfr = 60*RHO_AIR*Cp_AIR*air_flow*temp_diff # [Btu/hr]
-        heat_energy_xfr = heat_power_xfr*window_int
+        heat_power_xfr = 60*RHO_AIR*Cp_AIR*air_flow*delta_temp # [Btu/hr]
+        heat_energy_xfr = heat_power_xfr*window_int # [Btu]
     else:
         return None
 
@@ -1183,7 +1226,7 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder, af_accu_factor=None):
     fig, ax = plt.subplots(figsize=(8,4.5))
     ax.set_ylabel('Temperature difference [°F]')
     ax.set_xlabel('Air flow [cfm]')
-    ax.set_title("Valve = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left')
+    ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left')
 
     if any(~vlv_df['vlv_open']):
         ax.scatter(x=vlv_df.loc[~vlv_df['vlv_open'], 'air_flow'], y=vlv_df.loc[~vlv_df['vlv_open'], 'temp_diff'], color = closed_vlv_color, alpha=1/3, s=10, label='Closed valve')
@@ -1209,7 +1252,7 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder, af_accu_factor=None):
     if max_idx is not None:
         ax.scatter(x=xs[max_idx], y=ys[max_idx], color = '#ff0000', alpha=1, s=35, label='Peaks')
     if max_idx is not None:
-        ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35, label='Throughs')
+        ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35, label='Troughs')
 
     # Legend
     ax.legend(fontsize=6, markerscale=1, borderaxespad=0., ncol=2, bbox_to_anchor=(.50, 1.02), loc='lower left')
@@ -1263,7 +1306,18 @@ def density_data(dat, rescale_dat=None):
 
     return xs, ys
 
-def find_fault_vlv_operation(vlv_df, row, model, popt, window, th_bad_vlv):
+def smooth_ts(val, box_pts):
+    """
+    Apply smoothing function to timeseries values
+    """
+
+    box = np.ones(box_pts)/box_pts
+    val_smooth = np.convolve(val, box, mode='same')
+
+    return val_smooth
+
+
+def find_fault_vlv_operation(vlv_df, row, long_tc, window, th_bad_vlv):
     """
     Determine which timeseries values are data from probable passing valves and return 
     a pandas dataframe of only 'bad' values.
@@ -1290,68 +1344,135 @@ def find_fault_vlv_operation(vlv_df, row, model, popt, window, th_bad_vlv):
             (X minutes defined in global parameter 'shrt_term_fail') due to control errors, 
             mechanical/electrical problems, or other. Default 60 minutes (1 hour).
     """
-    PROBABILITY = 0.16
+
     window_int = window.seconds/60
-
     pass_type = dict()
-    hi_diff = np.percentile(vlv_df.loc[vlv_df['vlv_open'], 'temp_diff'], 95)
+    HI_DIFF_PERCENTILE = 95
+    # MAX_ITER = 5
 
-    if model is not None:
-        # # analyze sigmoid function
-        # y_max = max(vlv_df['temp_diff'])
-        # y_min = min(vlv_df['temp_diff'])
-        # sigmoid_func = make_sigmoid_func(y_max, y_min)
-        # max_model_diff = round(sigmoid_func(100, popt[0], popt[1]), 1)
-        # if max_model_diff > 2*th_bad_vlv:
-        #     x_prime = range(0,101,1)
-        #     y_prime = sigmoid_prime(x_prime, popt[0], popt[1], y_max, y_min)
-        #     y_prime_norm = y_prime/sum(y_prime)
+    def categorize_fault_operation(vlv_df, min_temp_diff_cutoff, iter=1, row=row):
+        # assume median of anything below long_tc deg difference at 0% open valve
+        # and at 95 pct temp diff at > 95% percent open valve
+        ideal_vlv_df = vlv_df.copy(deep=True)
+        closed_valve = ~ideal_vlv_df['vlv_open']
+        below_long_tc = ideal_vlv_df['temp_diff'] < min_temp_diff_cutoff
 
-        #     vlv_start_open = list(x_prime)[sum(np.cumsum(y_prime_norm) < PROBABILITY)]
-        #     diff_vlv_po_th = round(sigmoid_func(vlv_start_open, popt[0], popt[1]), 1)
-        # else:
-        tdiff_model_max = model[model['vlv_po'] == 100]['y_fitted'].mean()
-        if tdiff_model_max > 2*th_bad_vlv:
-            hi_diff = max(hi_diff, tdiff_model_max)
-            vlv_po_hi_diff = model[model['y_fitted'] >= hi_diff]['vlv_po'].mean()
+        adj_delT_at_closed_valve = ideal_vlv_df.loc[np.logical_and(closed_valve, below_long_tc), 'temp_diff'].describe()
+        ideal_vlv_df.loc[closed_valve, 'temp_diff'] = adj_delT_at_closed_valve["50%"]
 
-            if vlv_po_hi_diff in [np.nan, None]:
-                vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
+        hi_diff = np.percentile(ideal_vlv_df.loc[ideal_vlv_df['vlv_open'], 'temp_diff'], HI_DIFF_PERCENTILE)
+        ideal_vlv_df.loc[ideal_vlv_df['vlv_po'] >= 95, 'temp_diff'] = hi_diff
 
-            # define temperature difference and valve position failure thresholds
-            vlv_po_th = vlv_po_hi_diff/2.0
-            diff_vlv_po_th = max(model[model['vlv_po'] <= vlv_po_th]['y_fitted'].max(), th_bad_vlv)
+        try:
+            # make a logit regression model assuming that closed valves make a zero temp difference
+            model, popt = build_logistic_model(ideal_vlv_df)
+        except ValueError:
+            import pdb; pdb.set_trace()
+
+        if model is not None:
+            # # analyze sigmoid function
+            # y_max = max(vlv_df['temp_diff'])
+            # y_min = min(vlv_df['temp_diff'])
+            # sigmoid_func = make_sigmoid_func(y_max, y_min)
+            # max_model_diff = round(sigmoid_func(100, popt[0], popt[1]), 1)
+            # if max_model_diff > 2*th_bad_vlv:
+            #     x_prime = range(0,101,1)
+            #     y_prime = sigmoid_prime(x_prime, popt[0], popt[1], y_max, y_min)
+            #     y_prime_norm = y_prime/sum(y_prime)
+
+            #     vlv_start_open = list(x_prime)[sum(np.cumsum(y_prime_norm) < PROBABILITY)]
+            #     diff_vlv_po_th = round(sigmoid_func(vlv_start_open, popt[0], popt[1]), 1)
+            # else:
+            lower_bend = popt[1] - 1.317/popt[0]
+            # if row["equip"] == "VAVRM1013":
+            #     import pdb; pdb.set_trace()
+
+            vlv_position_range = np.logical_and(model['vlv_po'] >= (lower_bend - 2), model['vlv_po'] <= (lower_bend + 2))
+            diff_vlv_po_th = min(model[vlv_position_range]['y_fitted'].mean(), 10)
+
+        #     tdiff_model_max = model[model['vlv_po'] == 100]['y_fitted'].mean()
+        #     if tdiff_model_max > 2*th_bad_vlv:
+        #         hi_diff = max(hi_diff, tdiff_model_max)
+        #         vlv_po_hi_diff = model[model['y_fitted'] >= hi_diff]['vlv_po'].mean()
+
+        #         if vlv_po_hi_diff in [np.nan, None]:
+        #             vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
+
+        #         # define temperature difference and valve position failure thresholds
+        #         vlv_po_th = vlv_po_hi_diff/2.0
+        #         diff_vlv_po_th = max(model[model['vlv_po'] <= vlv_po_th]['y_fitted'].max(), th_bad_vlv)
+        #     else:
+        #         diff_vlv_po_th = max(hi_diff/4.0, th_bad_vlv)
         else:
-            diff_vlv_po_th = max(hi_diff/4.0, th_bad_vlv)
+            diff_vlv_po_th = max(hi_diff/4.0, th_bad_vlv/2)
+
+        smooth_box = 3
+        vlv_df["temp_diff_smooth"] = np.nan
+        df_grps = vlv_df.loc[~vlv_df["vlv_open"], :].groupby(["same"])
+        df_grp_count = df_grps["same"].count()
+        for grp in df_grp_count.index.values:
+            if df_grp_count[grp] > smooth_box:
+                df_grp = df_grps.get_group(grp)
+                temp_values = df_grp.loc[df_grp["steady"], "temp_diff"]
+                if len(temp_values) < smooth_box:
+                    continue
+                temp_diff_smooth = smooth_ts(temp_values, smooth_box)
+                vlv_df.loc[temp_values.index, "temp_diff_smooth"] = temp_diff_smooth
+
+        # find datapoints that exceed long-term temperature difference
+        exceed_long_t = vlv_df['temp_diff'] >= diff_vlv_po_th
+        smoothed_threshold = min(adj_delT_at_closed_valve["mean"] + adj_delT_at_closed_valve["std"]*2, diff_vlv_po_th)
+        exceed_long_t_smooth = vlv_df['temp_diff_smooth'] >= smoothed_threshold
+
+        # subset data by consecutive steady state values when valve is commanded closed and 
+        # exceeds long-term temperature difference
+        exceed_long_t_params = np.logical_and(exceed_long_t, exceed_long_t_smooth)
+        th_exceed = np.logical_and(np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady']), exceed_long_t_params)
+        vlv_df["fault_operation"] = th_exceed
+        df_bad = vlv_df.copy(deep=True)
+        df_bad = df_bad[th_exceed]
+
+        # check that stats of fault and normal valve operation
+        # when it is closed do not overlap
+        long_tbad = calc_long_t_diff(df_bad)
+
+        return vlv_df, df_bad, model, popt, long_tbad, adj_delT_at_closed_valve
+
+    # Add boolean indicate if data is above temperature threshold
+    # and above minimum airflow cutoff
+    if "minimum_air_flow_cutoff" in row.keys():
+        is_above_air_flow = vlv_df["air_flow"] > row["minimum_air_flow_cutoff"]
+        is_above_temp = vlv_df["temp_diff"] > th_bad_vlv
+        is_above_thresholds = np.logical_and(is_above_air_flow, is_above_temp)
     else:
-        diff_vlv_po_th = max(hi_diff/4.0, th_bad_vlv)
+        is_above_thresholds = vlv_df["temp_diff"] > th_bad_vlv
 
-    # find datapoints that exceed long-term temperature difference
-    exceed_long_t = vlv_df['temp_diff'] >= diff_vlv_po_th
+    vlv_df["abv_thr_temp_airflow"] = is_above_thresholds
 
-    # subset data by consecutive steady state values when valve is commanded closed and 
-    # exceeds long-term temperature difference
-    th_exceed = np.logical_and(np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady']), exceed_long_t)
-    df_bad = vlv_df[th_exceed]
+
+    try:
+        min_temp_diff_cutoff = min(long_tc["50%"]*2, th_bad_vlv)
+        vlv_df, df_bad, model, popt, long_tbad, adj_delT_at_closed_valve = categorize_fault_operation(vlv_df, min_temp_diff_cutoff)
+    except ValueError:
+        import pdb; pdb.set_trace()
 
     if df_bad.empty:
-        return None, dict()
+        df_bad = None
+        # vlv_df, df_bad, 
+        return vlv_df, df_bad, pass_type, model, popt
 
     # check that timestamps are consecutive in df_bad
     df_bad_cons_ts = check_consecutive_timestamps(df_bad, window)
     df_bad['cons_ts_fault_vlv'] = df_bad_cons_ts
 
     # analyze 'bad' dataframe for possible passing valve
-    #bad_grp = df_bad.groupby('same')
-    bad_grp = df_bad.loc[df_bad['cons_ts_fault_vlv'], :].groupby(['same', 'cons_ts_fault_vlv'])
-
     bad_grp = df_bad.groupby(['same', 'cons_ts_fault_vlv'])
     bad_grp_count = bad_grp['same'].count()
 
     idx_const_vals = bad_grp_count.index.get_level_values("cons_ts_fault_vlv").values
     if not any(idx_const_vals):
         # not bad values with consecutive timestamps found
-        return df_bad, pass_type
+        return vlv_df, df_bad, pass_type, model, popt
 
     bad_grp_count_cons_ts = bad_grp_count[(slice(None), True)]
 
@@ -1402,9 +1523,9 @@ def find_fault_vlv_operation(vlv_df, row, model, popt, window, th_bad_vlv):
                     fault_idx.append(fault_ts)
 
         fault_points = df_bad.index.isin(fault_idx)
-        pass_type['heat_loss_pwr-avg_nrgy-sum'] = calc_heat_transfer(df_bad.loc[fault_points], window)
+        pass_type['heat_loss_pwr-avg_nrgy-sum'] = calc_heat_transfer(df_bad.loc[fault_points], adj_delT_at_closed_valve["50%"], window)
 
-    return df_bad, pass_type
+    return vlv_df, df_bad, pass_type, model, popt
 
 
 def print_passing_mgs(row):
@@ -1531,19 +1652,40 @@ def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
     long_tc = calc_long_t_diff(vlv_df)
     long_tc_ratio = calc_long_tc_ratio(vlv_df)
 
-    if long_tc['50%'] > th_bad_vlv:
-        print_passing_mgs(row)
-        pass_type['simple_fail_dat-ratio_degF'] = (round(long_tc_ratio,1), round(long_tc['50%'], 2))
+    min_temp_diff_cutoff = min(long_tc["50%"]*2, th_bad_vlv)
 
-        folder = join(project_folder, bad_folder)
-        vlv_df.loc[:, 'good_oper_cat'] = False
-        long_t = None
-        long_tbad = long_tc['50%']
+    ideal_vlv_df = vlv_df.copy(deep=True)
+    closed_valve = ~ideal_vlv_df['vlv_open']
+    below_long_tc = ideal_vlv_df['temp_diff'] < min_temp_diff_cutoff
+
+    adj_delT_at_closed_valve = ideal_vlv_df.loc[np.logical_and(closed_valve, below_long_tc), 'temp_diff'].describe()
+    diff_vlv_po_th = adj_delT_at_closed_valve["mean"] + adj_delT_at_closed_valve["std"]
+
+    exceed_long_t = vlv_df['temp_diff'] >= diff_vlv_po_th
+
+    th_exceed = np.logical_and(np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady']), exceed_long_t)
+    vlv_df["fault_operation"] = th_exceed
+    df_bad = vlv_df.copy(deep=True)
+    df_bad = df_bad[th_exceed]
+
+    vlv_df.loc[:, 'good_oper_cat'] = True
+    if not df_bad.empty:
+        long_tbad = calc_long_t_diff(df_bad)
+        long_tbad = long_tbad['50%']
+        bad_ratio = 100*(df_bad.shape[0]/vlv_df.shape[0])
+        vlv_df.loc[df_bad.index, 'good_oper_cat'] = False
     else:
-        vlv_df.loc[:, 'good_oper_cat'] = True
-        folder = join(project_folder, good_folder)
-        long_t = long_tc['50%']
+        bad_ratio = 0
         long_tbad = None
+
+    if bad_ratio > 10 and pd.notnull(long_tbad) and long_tbad > th_bad_vlv/2.0:
+        print_passing_mgs(row)
+        pass_type['simple_fail_dat-ratio_faultdegf_gooddegF'] = (round(bad_ratio,1), round(long_tbad,1), round(adj_delT_at_closed_valve['50%'], 2))
+        folder = join(project_folder, bad_folder)
+        long_t = adj_delT_at_closed_valve['50%']
+    else:
+        folder = join(project_folder, good_folder)
+        long_t = adj_delT_at_closed_valve['50%']
         if log_details: logger.info("[{}] is only closed with good operation data".format(row['vlv']))
 
     _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_t, long_tbad=long_tbad, folder=folder)
@@ -1680,20 +1822,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
         print_passing_mgs(row)
         passing_type['tc_to_close_fail'] = round(long_tc_to_diff, 2)
 
-    # assume a 0 deg difference at 0% open valve
-    # and at 95 pct temp diff at > 95% percent open valve
-    HI_DIFF_PERCENTILE = 95
-    no_zeros_po = vlv_df.copy()
-    no_zeros_po.loc[~no_zeros_po['vlv_open'], 'temp_diff'] = 0
-
-    hi_diff = np.percentile(vlv_df['temp_diff'], HI_DIFF_PERCENTILE)
-    no_zeros_po.loc[no_zeros_po['vlv_po'] >= 95, 'temp_diff'] = hi_diff
-
-    # make a logit regression model assuming that closed valves make a zero temp difference
-    df_fit_nz, popt = build_logistic_model(no_zeros_po)
-
     # calculate bad valve instances vs overall dataframe
-    fault_vlv, pass_type = find_fault_vlv_operation(vlv_df, row, df_fit_nz, popt, window, th_bad_vlv)
+    vlv_df, fault_vlv, pass_type, ideal_model, popt = find_fault_vlv_operation(vlv_df, row, long_tc, window, th_bad_vlv)
     passing_type.update(pass_type)
 
     if fault_vlv is None:
@@ -1706,8 +1836,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
     BAD_RATIO_THRESHOLD = 5
 
     # estimate size of leak in terms of pct that valve is open
-    if df_fit_nz is not None and long_tbad is not None:
-        est_leak = df_fit_nz[df_fit_nz['y_fitted'] <= long_tbad]['vlv_po'].max()
+    if ideal_model is not None and long_tbad is not None:
+        est_leak = ideal_model[ideal_model['y_fitted'] <= long_tbad]['vlv_po'].max()
         if est_leak > popt[1] and bad_ratio > BAD_RATIO_THRESHOLD:
             passing_type['leak_grtr_xovr_fail_vlv-pos'] = est_leak
     else:
@@ -1719,13 +1849,13 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
     failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail_vlv-pos', 'leak_grtr_threshold_fail_degF'] for x in passing_type.keys()]
     if len([x for x in passing_type.keys() if 'sensor_fault' in x]) > 0:
         folder = join(project_folder, sensor_fault_folder)
-    elif 'long_term_fail' in passing_type.keys():
+    elif 'long_term_fail' in passing_type.keys() and passing_type['long_term_fail'][1] >= 2 and pd.notnull(long_tbad) and long_tbad > th_bad_vlv/2.0:
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
-    elif any(failure) and (bad_ratio > BAD_RATIO_THRESHOLD):
+    elif any(failure) and (bad_ratio > BAD_RATIO_THRESHOLD) and pd.notnull(long_tbad) and long_tbad > th_bad_vlv/2.0:
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
-    elif 'simple_fail_dat-ratio_degF' in passing_type.keys() and (long_tc_ratio > BAD_RATIO_THRESHOLD):
+    elif 'simple_fail_dat-ratio_degF' in passing_type.keys() and (long_tc_ratio > BAD_RATIO_THRESHOLD) and pd.notnull(long_tbad) and long_tbad > th_bad_vlv/2.0:
         print_passing_mgs(row)
         folder = join(project_folder, bad_folder)
     else:
@@ -1736,7 +1866,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
     if fault_vlv is not None:
         vlv_df.loc[fault_vlv.index, 'good_oper_cat'] = False
 
-    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], long_tbad=long_tbad, df_fit=df_fit_nz, bad_ratio=bad_ratio, folder=folder)
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], long_tbad=long_tbad, df_fit=ideal_model, bad_ratio=bad_ratio, folder=folder)
     pass_type['folder'] = folder
     row.update({'long_t': round(long_tc['50%'], 2), 'long_tbad': None if long_tbad is None else round(long_tbad, 2), 'bad_ratio': round(bad_ratio, 2), 'folder': folder})
 
