@@ -191,7 +191,8 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
             p.step(
                 pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None),
                 dd[:, 1], legend_label=metadata.loc[in_data_index[i], "point_name_x"],
-                color = plt_colors[i % len(plt_colors)], line_width=2
+                color = plt_colors[i % len(plt_colors)], line_width=2,
+                mode = 'after'
                 )
 
         y_axis_label = str(point_type).split("#")[1]
@@ -244,6 +245,7 @@ def add_ctrl_data(plt, boiler_sp_file):
             bsp_dat.index,
             bsp_dat[col_plt], legend_label=col_plt,
             color = "#d53e4f", line_width=2.5, line_dash="dashed",
+            mode = 'after'
             )
 
     return plt
@@ -269,6 +271,7 @@ def add_req_num_data(plt, hwc_request_file):
             hwcr_dat.index,
             hwcr_dat[col], legend_label=col,
             color = colors[dd], line_width=2,
+            mode = 'after'
             )
 
     return new_p
@@ -295,7 +298,8 @@ def plot_boiler_temps(boiler_points_to_download, boiler_data, filename, ctrlr_sp
         p.step(
             pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None),
             dd[:, 1], legend_label=boiler_points_to_download.iloc[i]["point_name_x"],
-            color = plt_colors[i % len(plt_colors)], line_width=2
+            color = plt_colors[i % len(plt_colors)], line_width=2,
+            mode = 'after'
             )
 
     # add extra plot lines
