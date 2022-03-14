@@ -249,7 +249,8 @@ if __name__ == '__main__':
         # define variables
         vlv_dat = dict(row)
         # run passing valve detection algorithm
-        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=TH_BAD_VLV, th_time=12, project_folder=project_folder, detection_params=detection_params)
+        vlv_df, passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv=TH_BAD_VLV, th_time=12, project_folder=project_folder, detection_params=detection_params)
+        vavs_df[key]['vlv_dat'] = vlv_df
 
         # save results
         vlv_dat.update(passing_type)

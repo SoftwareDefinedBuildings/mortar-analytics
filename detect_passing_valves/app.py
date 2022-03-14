@@ -901,6 +901,7 @@ def calc_heat_transfer(df, long_term_temp_diff=None, window=None):
         heat_power_xfr = 60*RHO_AIR*Cp_AIR*air_flow*delta_temp # [Btu/hr]
         heat_energy_xfr = heat_power_xfr*window_int # [Btu]
     else:
+        print("No air flow!")
         return None
 
     return (round(np.mean(heat_power_xfr), 1), round(sum(heat_energy_xfr), 1))
@@ -928,7 +929,7 @@ def check_consecutive_timestamps(df, window=None):
         window = determine_timestamp_interval(df)
 
     ts = pd.Series(df.index)
-    cons_ts = ((ts - ts.shift(-1)).abs() <= window) | (ts.diff() <= window)
+    cons_ts = ((ts.shift(-1) - ts) <= window)
 
     return list(cons_ts)
 
@@ -1461,13 +1462,21 @@ def find_fault_vlv_operation(vlv_df, row, long_tc, window, th_bad_vlv):
         # vlv_df, df_bad, 
         return vlv_df, df_bad, pass_type, model, popt
 
+    # verify that temp diff is greater than zero
+
     # check that timestamps are consecutive in df_bad
     df_bad_cons_ts = check_consecutive_timestamps(df_bad, window)
-    df_bad['cons_ts_fault_vlv'] = df_bad_cons_ts
+
+    if "minimum_air_flow_cutoff" in row.keys():
+        above_airflow = df_bad["air_flow"] > row["minimum_air_flow_cutoff"]
+        df_bad['cons_ts_fault_vlv'] = np.logical_and(df_bad_cons_ts, above_airflow)
+    else:
+        df_bad['cons_ts_fault_vlv'] = df_bad_cons_ts
 
     # analyze 'bad' dataframe for possible passing valve
-    bad_grp = df_bad.groupby(['same', 'cons_ts_fault_vlv'])
-    bad_grp_count = bad_grp['same'].count()
+    df_bad.loc[:, 'same_fault'] = df_bad['cons_ts_fault_vlv'].astype(int).diff().ne(0).cumsum()
+    bad_grp = df_bad.groupby(['same_fault', 'cons_ts_fault_vlv'])
+    bad_grp_count = bad_grp['same_fault'].count()
 
     idx_const_vals = bad_grp_count.index.get_level_values("cons_ts_fault_vlv").values
     if not any(idx_const_vals):
@@ -1489,7 +1498,7 @@ def find_fault_vlv_operation(vlv_df, row, long_tc, window, th_bad_vlv):
     long_term_fail_bool = (bad_grp_count_cons_ts*window_int) > long_term_fail
     if any(long_term_fail_bool):
         long_term_fail_times = bad_grp_count_cons_ts[long_term_fail_bool]*window_int
-        if long_term_fail_times.count() >= 1 or long_term_fail_times.index[-1] == vlv_df['same'].max():
+        if long_term_fail_times.count() >= 1 or long_term_fail_times.index[-1] == vlv_df['same_fault'].max():
             long_fault_idx = long_term_fail_times.index.values
             long_all_dates = [bad_grp.groups[(ky, True)] for ky in long_fault_idx]
             dates = [(ky[0], ky[-1]) for ky in long_all_dates]
@@ -1523,7 +1532,21 @@ def find_fault_vlv_operation(vlv_df, row, long_tc, window, th_bad_vlv):
                     fault_idx.append(fault_ts)
 
         fault_points = df_bad.index.isin(fault_idx)
-        pass_type['heat_loss_pwr-avg_nrgy-sum'] = calc_heat_transfer(df_bad.loc[fault_points], adj_delT_at_closed_valve["50%"], window)
+
+        df_heat_loss = df_bad.loc[fault_points]
+        df_heat_intended = vlv_df.loc[np.logical_and(~vlv_df.index.isin(df_heat_loss.index), vlv_df["vlv_open"])]
+        pass_type['heat_loss_pwr-avg_nrgy-sum'] = calc_heat_transfer(df_heat_loss, adj_delT_at_closed_valve["50%"], window)
+        pass_type['heat_intentional_pwr-avg_nrgy-sum'] = calc_heat_transfer(df_heat_intended, adj_delT_at_closed_valve["50%"], window)
+
+        # update fault operation
+        df_bad["fault_operation"] = False
+        df_bad.loc[fault_idx, "fault_operation"] = True
+
+        vlv_df["fault_operation"] = False
+        vlv_df["df_bad"] = False
+
+        vlv_df.loc[fault_idx, "fault_operation"] = True
+        vlv_df.loc[df_bad.index, "df_bad"] = True
 
     return vlv_df, df_bad, pass_type, model, popt
 
@@ -1745,7 +1768,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
         if log_details: logger.info(message)
         row.update({'output_details': 'no data after calc features'})
         if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
-        return passing_type
+        return vlv_df, passing_type
 
     # Analyze timestamps and valve operation changes
     window = determine_timestamp_interval(vlv_df)
@@ -1757,7 +1780,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
             consecutive timestamps! Skipping...".format(row['vlv'], row['site']))
         row.update({'output_details': 'no data after timestamp analysis'})
         if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
-        return passing_type
+        return vlv_df, passing_type
 
 
     # check that sensors are not reporting constant numbers
@@ -1770,6 +1793,8 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
     if 'air_flow' in vlv_df.columns:
         # plot temp diff vs air flow
         _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'), af_accu_factor=af_accu_factor)
+    else:
+        row.update({'airflow': 'False'})
 
     # drop data that occurs during unoccupied hours
     vlv_df, row = drop_unoccupied_dat(vlv_df, row=row, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=air_flow_required, af_accu_factor=af_accu_factor)
@@ -1779,7 +1804,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
             occupancy check! Skipping...".format(row['vlv'], row['site']))
         row.update({'output_details': 'no data after occupancy check'})
         if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
-        return passing_type
+        return vlv_df, passing_type
 
     # determine if valve datastream has open and closed data
     bool_type = vlv_df['vlv_open'].value_counts().index
@@ -1794,7 +1819,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
             passing_type, row = analyze_only_close(vlv_df, row, th_bad_vlv, project_folder)
             row.update({'output_details': 'only closed valve data'})
         if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
-        return passing_type
+        return vlv_df, passing_type
 
     # TODO: Figure out what to do if long_tc is None!
     # calculate long-term temp diff when valve is closed
@@ -1808,7 +1833,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
         passing_type.update(pass_type)
         row.update({'output_details': 'no consecutive timestamps and steady state conditions when valve is closed'})
         if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
-        return passing_type
+        return vlv_df, passing_type
 
     # make simple comparison of long-term closed temp difference and user define threshold
     if long_tc['50%'] > th_bad_vlv:
@@ -1830,7 +1855,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
         bad_ratio = 0
         long_tbad = None# long_tc['50%']
     else:
-        bad_ratio = 100*(fault_vlv.shape[0]/vlv_df.shape[0])
+        bad_ratio = 100*(fault_vlv[fault_vlv["fault_operation"]].shape[0]/vlv_df.shape[0])
         long_tbad = fault_vlv['temp_diff'].describe()['50%']
 
     BAD_RATIO_THRESHOLD = 5
@@ -1872,7 +1897,7 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
 
     if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
 
-    return passing_type
+    return vlv_df, passing_type
 
 
 def log_row_details(row, outfolder):
@@ -1911,7 +1936,7 @@ def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, project_folder):
     else:
         passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv, th_time, project_folder)
 
-    return passing_type
+    return vlv_df, passing_type
 
 
 def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time, project_folder):
@@ -1949,7 +1974,7 @@ def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time
             vlv_df = clean_func(fetch_resp, row)
 
             # analyze for passing valves
-            passing_type = analyze_func(vlv_df, row, th_bad_vlv, th_time, project_folder)
+            vlv_df, passing_type = analyze_func(vlv_df, row, th_bad_vlv, th_time, project_folder)
 
         except:
             import traceback
