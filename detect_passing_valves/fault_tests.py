@@ -10,7 +10,7 @@ def fault_sensor_inactivity(vlv_df, passing_type):
     Check that sensors are taking measurements and not
     just reporting a constant number
     """
-    pct_threshold = 1.5
+    pct_threshold = 0.75
 
     analysis_cols = ['upstream_ta', 'dnstream_ta', 'air_flow']
     df_cols = vlv_df.columns
@@ -26,8 +26,8 @@ def fault_sensor_inactivity(vlv_df, passing_type):
             passing_type["sensor_fault_CONSTANT_{}".format(col)] = (col_min, col_max)
             return vlv_df, passing_type
 
-        col_dat = (col_dat-col_min)/(col_max-col_min)
-        col_stats = abs(col_dat.diff(periods=-1).loc[vlv_df['cons_ts']]).describe()
+        col_dat_norm = (col_dat-col_min)/(col_max-col_min)
+        col_stats = abs(col_dat_norm.diff(periods=-1).loc[vlv_df['cons_ts']]).describe()
 
         try:
             if round(col_stats["std"]*100,1) < pct_threshold:
