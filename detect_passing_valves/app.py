@@ -1782,7 +1782,6 @@ def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', det
         if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
         return vlv_df, passing_type
 
-
     # check that sensors are not reporting constant numbers
     vlv_df, passing_type = fault_sensor_inactivity(vlv_df, passing_type)
 
