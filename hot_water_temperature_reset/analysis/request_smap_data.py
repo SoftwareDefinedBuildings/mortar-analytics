@@ -1,7 +1,6 @@
 import brickschema
 import pandas as pd
 import numpy as np
-from operator import itemgetter
 from os.path import join
 import sys
 sys.path.append("/mnt/c/Users/duar3/Documents/github/smap/python")
@@ -379,8 +378,8 @@ if __name__ == "__main__":
     plot_folder = "./figures"
 
     # time interval for to download data
-    start = dtutil.dt2ts(dtutil.strptime_tz("1-01-2022", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("04-02-2022", "%m-%d-%Y"))
+    start = dtutil.dt2ts(dtutil.strptime_tz("3-01-2022", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("06-01-2022", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
