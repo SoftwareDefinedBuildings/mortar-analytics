@@ -146,7 +146,7 @@ def parse_dict_list_file(line):
 if __name__ == '__main__':
     # NOTE: HW plant off from August 31 to October 7 2021
     dat_folder = join('./', 'external_data', 'bldg_trc_rs')
-    project_folder = join('./', 'external_analysis', 'bldg_trc_rs', 'lg_4hr_shrt_1hr_test_no_aflw_req_10C_threshold')
+    project_folder = join('./', 'external_analysis', 'bldg_trc_rs', 'lg_4hr_shrt_1hr_test_no_aflw_req_10C_threshold_2nd_draft_revisit')
 
     csv_list = [
         join(dat_folder, 'zone trends, September 2021.csv'),

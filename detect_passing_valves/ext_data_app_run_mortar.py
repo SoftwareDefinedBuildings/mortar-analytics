@@ -73,7 +73,7 @@ def parse_dict_list_file(line):
 
 if __name__ == '__main__':
     dat_folder = join('with_airflow_checks_year_start', 'csv_data')
-    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_no_aflw_req_10C_threshold')
+    project_folder = join('./', 'external_analysis', 'MORTAR', 'lg_4hr_shrt_1hr_test_no_aflw_req_10C_threshold_2nd_draft_revisit')
 
     # define container folders
     good_folder = 'good_valves'         # name of path to the folder to save the plots of the correct operating valves
