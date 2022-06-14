@@ -1130,10 +1130,12 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, long_to=
     bad_oper_color = '#b3005a'
 
     # plot temperature difference vs valve position
-    fig, ax = plt.subplots(figsize=(8,4.5))
-    ax.set_ylabel('Temperature difference [°F]')
-    ax.set_xlabel('Valve opened [%]')
-    ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left')
+    fig, ax = plt.subplots(figsize=(8,4.25))
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+    ax.set_ylabel('Temperature difference [°F]', fontsize=12)
+    ax.set_xlabel('Valve opened [%]', fontsize=12)
+    ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left', fontsize=12)
     ax.set_ylim((min(-2, y_min)*1.02, np.ceil(y_max*1.05)))
     ax.set_xlim((min(-2, x_min)*1.02, max(100, x_max)*1.02))
 
@@ -1169,8 +1171,9 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, long_to=
         ax.text(.25, 0.98*y_max, "Fault operation proportion={:.1f}%".format(bad_ratio))
 
     # legend
-    # ax.legend(fontsize=8, markerscale=1, borderaxespad=0., ncol=2, loc='upper right', bbox_to_anchor=(0.15, 1.05, 1., .102))
-    ax.legend(fontsize=6, markerscale=1, borderaxespad=0., ncol=2, bbox_to_anchor=(.48, 1.02), loc='lower left')
+    #ax.legend(bbox_to_anchor=(-0.15, -0.44), fontsize=10, markerscale=1, ncol=3, loc='lower left', frameon=False, handletextpad=0.15)
+    ax.legend(bbox_to_anchor=(0.48, -0.48), fontsize=10, markerscale=1, ncol=2, loc='lower center', frameon=False, handletextpad=0.15)
+    fig.subplots_adjust(bottom=0.27)
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
     full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
@@ -1224,10 +1227,12 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder, af_accu_factor=None):
     vlv_df.loc[vlv_df['vlv_open'], 'color_open'] = open_vlv_color
 
     # plot temperature difference vs valve position
-    fig, ax = plt.subplots(figsize=(8,4.5))
-    ax.set_ylabel('Temperature difference [°F]')
-    ax.set_xlabel('Air flow [cfm]')
-    ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left')
+    fig, ax = plt.subplots(figsize=(8,4.25))
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+    ax.set_ylabel('Temperature difference [°F]', fontsize=12)
+    ax.set_xlabel('Air flow [cfm]', fontsize=12)
+    ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left', fontsize=12)
 
     if any(~vlv_df['vlv_open']):
         ax.scatter(x=vlv_df.loc[~vlv_df['vlv_open'], 'air_flow'], y=vlv_df.loc[~vlv_df['vlv_open'], 'temp_diff'], color = closed_vlv_color, alpha=1/3, s=10, label='Closed valve')
@@ -1256,7 +1261,9 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder, af_accu_factor=None):
         ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35, label='Troughs')
 
     # Legend
-    ax.legend(fontsize=6, markerscale=1, borderaxespad=0., ncol=2, bbox_to_anchor=(.50, 1.02), loc='lower left')
+    # ax.legend(fontsize=10, markerscale=1, borderaxespad=0., ncol=2, bbox_to_anchor=(.50, 1.02), loc='lower left')
+    ax.legend(bbox_to_anchor=(0.48, -0.40), fontsize=10, markerscale=1, ncol=3, loc='lower center', frameon=False, handletextpad=0.15)
+    fig.subplots_adjust(bottom=0.25)
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
     full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
