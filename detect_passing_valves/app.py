@@ -1177,7 +1177,7 @@ def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, long_to=
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
     full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
-    plt.savefig(full_path)
+    plt.savefig(full_path, dpi=600)
     plt.close()
 
 
@@ -1267,7 +1267,7 @@ def _make_tdiff_vs_aflow_plot(vlv_df, row, folder, af_accu_factor=None):
 
     plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
     full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
-    plt.savefig(full_path)
+    plt.savefig(full_path, dpi=600)
     plt.close()
 
 

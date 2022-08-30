@@ -187,7 +187,7 @@ def parse_dict_list_file(line):
 
 if __name__ == '__main__':
     dat_folder = join('./', 'external_data', 'bldg_gt_pr', '20211118')
-    project_folder = join('./', 'external_analysis', 'bldg_gt_pr', 'lg_4hr_shrt_1hr_test_no_aflw_req_10C_threshold_2nd_draft_revisit')
+    project_folder = join('./', 'external_analysis', 'bldg_gt_pr', 'lg_4hr_shrt_1hr_test_no_aflw_req_10C_threshold_2nd_draft_revisit_hiquality_plots')
 
     # read files
     discharge_temp_file = join(dat_folder, 'B44-B45 Discharge Air Temp Sensor Readings - 01MAY2021 to 10NOV2021.csv')
