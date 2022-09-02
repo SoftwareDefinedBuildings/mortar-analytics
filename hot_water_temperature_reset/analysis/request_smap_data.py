@@ -151,7 +151,7 @@ def get_paths_from_tags(tags):
     return paths
 
 
-def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=None):
+def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=None, ylimits=None):
 
     plots = []
     for ii, point_type in enumerate(metadata['req_point'].unique()):
@@ -196,6 +196,11 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
 
         y_axis_label = str(point_type).split("#")[1]
         p.yaxis.axis_label = y_axis_label
+
+        if ylimits is not None:
+            y_plot_range = Range1d(start=ylimits[0], end=ylimits[1])
+            p.y_range = y_plot_range
+
         p.legend.click_policy = "hide"
 
         p.legend.label_text_font_size = "9px"
@@ -488,7 +493,7 @@ if __name__ == "__main__":
     fig_file_air = join(plot_folder, "air_zone_temps.html")
     fig_file_rad = join(plot_folder, "rad_zone_temps.html")
     air_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[air_zones, :], zn_temps_data, start, end, fig_file_air)
-    rad_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[rad_zones, :], zn_temps_data, start, end, fig_file_rad)
+    rad_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[rad_zones, :], zn_temps_data, start, end, fig_file_rad, ylimits=(55,85))
 
 
     #############################
