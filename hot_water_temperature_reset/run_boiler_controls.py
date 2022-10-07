@@ -320,13 +320,18 @@ class Boiler_Controller:
 
             # return latest_boiler_setpoint <<<---- CARLOS: use this to generate setpoint 
             ## TODO: self.set_boiler_setpoint(latest_boiler_setpoint (F))
-            if latest_boiler_setpoint > current_boiler_sp:
-                direction = 'up'
+            # Send new setpoint if different
+            if abs(round(latest_boiler_setpoint, 1) - round(current_boiler_sp, 1)) > 0.1:
+                if latest_boiler_setpoint > current_boiler_sp:
+                    direction = 'up'
+                else:
+                    direction = 'down'
+                logger.info(f"[{pd.Timestamp.now()}] Sending new setpoint to boiler ({self.convert_K_to_degF(latest_boiler_setpoint)})deg F at priority 13 and direction= {direction}")
+                self.send_new_setpoint_to_boiler(latest_boiler_setpoint, priority=13, direction=direction)
             else:
-                direction = 'down'
+                logger.info(f"[{pd.Timestamp.now()}] New calculate setpoint is not different enough to send to boilers. \
+                    Calculated = ({self.convert_K_to_degF(latest_boiler_setpoint)})deg F | Existing = {self.convert_K_to_degF(current_boiler_sp)}deg F")
 
-            logger.info(f"[{pd.Timestamp.now()}] Sending new setpoint to boiler ({self.convert_K_to_degF(latest_boiler_setpoint)})deg F at priority 13 and direction= {direction}")
-            self.send_new_setpoint_to_boiler(latest_boiler_setpoint, priority=13, direction=direction)
 
             # Verify that new setpoint was sent
             boiler_values = self.get_current_state()
@@ -342,15 +347,14 @@ class Boiler_Controller:
 def main():
 
     try:
-        loop = asyncio.get_event_loop()
         boiler = Boiler_Controller()
         # threading.Thread(target=boiler.run).start()
-        loop.run_forever()
+        boiler.loop.run_forever()
 
     except KeyboardInterrupt:
         logger.info(f"[{pd.Timestamp.now()}] Stopping event loop")
         boiler.bldg_boilers[0].stop_htm_data_archive()
-        loop.stop()
+        boiler.loop.stop()
 
 if __name__ == "__main__":
     main()
