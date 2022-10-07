@@ -16,18 +16,26 @@ fig_folder <- file.path('./', 'figures')
 
 source(file.path(github_folder, 'publication_formats', 'r_ggplot_formats.R'))
 
+
+IPtoSI_temp_conversion <- function(degF) {
+  return((degF-32)/1.8)
+}
+
 coeff = 15
 
 fig_type <- 'presentation_plot_area'
+fig_type <- 'graphical_abstract_grid'
 plot_type <- 'png'
+fig_size_factor <- 1/2
 
 select_dates <- ymd_hm(c('2021-12-01 16:00', '2021-12-03 09:00'))
+select_dates <- ymd_hm(c('2021-12-7 0:00', '2021-12-10 23:59'))
 ignore_req <- 2
 
 num_requests <- read_csv('./DATA/number_of_request.csv', 
-                         col_names = c('req_num_fast_react', 'req_num_slow_react', 'Total Request', 'Timestamp'),
+                         col_names = c('req_num_fast_react', 'req_num_slow_react', 'Total Requests', 'Timestamp'),
                          ) %>%
-  select(Timestamp, `Total Request`) %>%
+  select(Timestamp, `Total Requests`) %>%
   filter(Timestamp >= select_dates[1],
          Timestamp <= select_dates[2])
   # rename(value = `number of request sent to fmu`) %>%
@@ -62,14 +70,14 @@ boiler_temps_bacnet <- read_csv('./DATA/smap_boiler_temps.csv') %>%
 
 # Request Plot
 req_plot <- num_requests %>%
-  ggplot(., aes(Timestamp, `Total Request`)) +
+  ggplot(., aes(Timestamp, `Total Requests`)) +
   fig_format[[fig_type]][["fig_format"]] +
-  geom_step(size=1.25, color='#3ed579') +
-  geom_hline(yintercept=ignore_req, size=1.5, linetype='dashed', color='#d5793e') +
-  annotate('text', x=num_requests$Timestamp[30], y=ignore_req+.3, label='Ignored Requests', size=6, color='#d5793e') +
+  geom_step(size=1.25*fig_size_factor, color='#3ed579') +
+  geom_hline(yintercept=ignore_req, size=1.5*fig_size_factor, linetype='dashed', color='#d5793e') +
+  annotate('text', x=num_requests$Timestamp[as.integer(200*fig_size_factor)], y=ignore_req+.3, label='Ignored Requests', size=6*fig_size_factor, color='#d5793e') +
   theme(axis.title.x=element_blank()) +
   scale_x_datetime(date_breaks = "1 day", labels=date_format("%b %d")) +
-  scale_y_continuous(breaks = c(1,2,3))
+  scale_y_continuous(breaks = seq(1,10))
   
 
 fig_print_size = fig_format[[fig_type]][["fig_print_size"]]
@@ -78,7 +86,7 @@ fig_height = fig_print_size[2]
 
 fig_filename = 'number_of_request'
 ggsave(paste(fig_folder, paste0(fig_filename, '.', plot_type), sep='/'), req_plot,
-       device=plot_type, dpi=600, width=fig_width, height=2.2)
+       device=plot_type, dpi=600, width=fig_width*0.933, height=2.2*fig_size_factor)
 
 
 
@@ -88,10 +96,10 @@ line_color <- c('Hot Water Supply'  = '#3288bd',
                 'Boiler Supply Setpoint' = '#f46d43',
                 'New G36 Controller Setpoint' = '#fdae61')
 
-line_width <- c('Hot Water Supply'  = .75,
-                'Hot Water Return'  = .5,
-                'Boiler Supply Setpoint' = 1.25,
-                'New G36 Controller Setpoint' = 2)
+line_width <- c('Hot Water Supply'  = .75*fig_size_factor,
+                'Hot Water Return'  = .5*fig_size_factor,
+                'Boiler Supply Setpoint' = 1.25*fig_size_factor,
+                'New G36 Controller Setpoint' = 2*fig_size_factor)
 
 line_type <- c('Hot Water Supply'  = 'solid',
                 'Hot Water Return'  = 'solid',
@@ -106,8 +114,9 @@ temp_plot <- bind_rows(boiler_temps_bacnet, boiler_setpoint_cdl_calc) %>%
   theme(axis.title.x=element_blank(),
         axis.text.x = element_blank()) +
   scale_y_continuous(
-    name = "Temperature [F]",
-    breaks = seq(70, 150, 10)
+    name = "Temperature [°F]",
+    breaks = seq(70, 150, 20),
+    sec.axis = sec_axis(~ IPtoSI_temp_conversion(.), name='[°C]')
   ) +
   scale_x_datetime(date_breaks = "1 day", labels=date_format("%b %d")) +
   scale_colour_manual(values=line_color, limits=names(line_color)) +
@@ -122,7 +131,7 @@ fig_height = fig_print_size[2]
 
 fig_filename = 'new_control_setpoint'
 ggsave(paste(fig_folder, paste0(fig_filename, '.', plot_type), sep='/'), temp_plot,
-       device=plot_type, dpi=600, width=fig_width, height=3.3)
+       device=plot_type, dpi=600, width=fig_width, height=3.3*fig_size_factor)
 
 #d53e4f
 

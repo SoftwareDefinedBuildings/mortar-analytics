@@ -1,7 +1,6 @@
 import brickschema
 import pandas as pd
 import numpy as np
-from operator import itemgetter
 from os.path import join
 import sys
 sys.path.append("/mnt/c/Users/duar3/Documents/github/smap/python")
@@ -191,7 +190,8 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
             p.step(
                 pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None),
                 dd[:, 1], legend_label=metadata.loc[in_data_index[i], "point_name_x"],
-                color = plt_colors[i % len(plt_colors)], line_width=2
+                color = plt_colors[i % len(plt_colors)], line_width=2,
+                mode = 'after'
                 )
 
         y_axis_label = str(point_type).split("#")[1]
@@ -244,6 +244,7 @@ def add_ctrl_data(plt, boiler_sp_file):
             bsp_dat.index,
             bsp_dat[col_plt], legend_label=col_plt,
             color = "#d53e4f", line_width=2.5, line_dash="dashed",
+            mode = 'after'
             )
 
     return plt
@@ -269,6 +270,7 @@ def add_req_num_data(plt, hwc_request_file):
             hwcr_dat.index,
             hwcr_dat[col], legend_label=col,
             color = colors[dd], line_width=2,
+            mode = 'after'
             )
 
     return new_p
@@ -295,7 +297,8 @@ def plot_boiler_temps(boiler_points_to_download, boiler_data, filename, ctrlr_sp
         p.step(
             pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None),
             dd[:, 1], legend_label=boiler_points_to_download.iloc[i]["point_name_x"],
-            color = plt_colors[i % len(plt_colors)], line_width=2
+            color = plt_colors[i % len(plt_colors)], line_width=2,
+            mode = 'after'
             )
 
     # add extra plot lines
@@ -375,8 +378,8 @@ if __name__ == "__main__":
     plot_folder = "./figures"
 
     # time interval for to download data
-    start = dtutil.dt2ts(dtutil.strptime_tz("9-10-2021", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("12-15-2021", "%m-%d-%Y"))
+    start = dtutil.dt2ts(dtutil.strptime_tz("4-01-2022", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("08-02-2022", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
@@ -527,3 +530,28 @@ if __name__ == "__main__":
     # create plots
     fig_file = join(plot_folder, "ahu_discharge_temps.html")
     dischrg_temps_plots = plot_multiple_entities(ahu_points_to_download, ahu_data, start, end, fig_file)
+
+    #############################
+    ##### Heat pump heating start and stop status
+    #############################
+    hp_status = ["brick:Heating_Start_Stop_Status", "brick:On_Off_Command"]
+    hp_metadata = search_for_entities(g, "brick:Water_Source_Heat_Pump", hp_status, relationship="brick:hasPoint")
+
+    df_asset = []
+    for ind_asset in hp_metadata["entity"].unique():
+        df_asset.append(return_entity_points(g, ind_asset, hp_status))
+
+    df_asset = pd.concat(df_asset).reset_index(drop=True)
+    df_asset["bacnet_instance"] = df_asset["bacnet_instance"].astype(int).astype(str)
+
+    # filter
+    hp_sf_bool = df_asset["point_name"].str.contains("SF-C")
+    hp_heat_status_bool = df_asset["req_point"].str.contains("Heating_Start_Stop_Status")
+    filter_bool = np.logical_or(hp_sf_bool, hp_heat_status_bool)
+    df_asset = df_asset.loc[filter_bool, :]
+
+    hp_points_to_download, hp_data = get_data_from_smap(df_asset, paths, smap_client, start, end)
+
+    # create plots
+    fig_file = join(plot_folder, "hp_heating_status.html")
+    hp_status_plots = plot_multiple_entities(hp_points_to_download, hp_data, start, end, fig_file)
