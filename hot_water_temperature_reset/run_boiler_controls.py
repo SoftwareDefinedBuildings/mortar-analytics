@@ -84,7 +84,7 @@ class Boiler_Controller:
         self.boiler.set('nBoi', 2)
 
         self.boiler.set('nHotWatResReqIgn', 2) # number of requests to be ignored
-        self.boiler.set('TPlaHotWatIniSet', boiler_inputs.get('current_boiler_setpoint', self.convert_degF_to_K(130)) ## initial temperature setpoint
+        self.boiler.set('TPlaHotWatIniSet', boiler_inputs.get('current_boiler_setpoint', self.convert_degF_to_K(130))) ## initial temperature setpoint
         self.boiler.set('TPlaHotWatSetMax', self.convert_degF_to_K(130))
         self.boiler.set('TConBoiHotWatSetMax', self.convert_degF_to_K(130))
         self.boiler.set('THotWatSetMinConBoi', self.convert_degF_to_K(90))
