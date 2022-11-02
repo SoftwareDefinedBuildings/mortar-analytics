@@ -87,7 +87,7 @@ class Boiler_Controller:
         self.boiler.set('TPlaHotWatIniSet', boiler_inputs.get('current_boiler_setpoint', self.convert_degF_to_K(130))) ## initial temperature setpoint
         self.boiler.set('TPlaHotWatSetMax', self.convert_degF_to_K(130))
         self.boiler.set('TConBoiHotWatSetMax', self.convert_degF_to_K(130))
-        self.boiler.set('THotWatSetMinConBoi', self.convert_degF_to_K(90))
+        self.boiler.set('THotWatSetMinConBoi', self.convert_degF_to_K(80))
 
         # uStaCha, uHotWatPumSta[nPum], nHotWatSupResReq, uTyp[nSta], uCurStaSet
         # op: TPlaHotWatSupSet
