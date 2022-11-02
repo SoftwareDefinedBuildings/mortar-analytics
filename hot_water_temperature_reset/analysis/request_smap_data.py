@@ -353,7 +353,8 @@ def convert_smap_to_pandas(smap_dat_arr, col_labels=None):
 
     df = []
     for i, dd in enumerate(smap_dat_arr):
-        df_timestamps = pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None)
+        # df_timestamps = pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None) # does not take into account daylight savings time change
+        df_timestamps = pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific")
         if col_labels is not None:
             cur_df = pd.DataFrame(dd[:, 1], index=df_timestamps, columns=[col_labels[i]])
         else:
@@ -383,8 +384,8 @@ if __name__ == "__main__":
     plot_folder = "./figures"
 
     # time interval for to download data
-    start = dtutil.dt2ts(dtutil.strptime_tz("7-01-2022", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("11-02-2022", "%m-%d-%Y"))
+    start = dtutil.dt2ts(dtutil.strptime_tz("8-01-2022", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("12-03-2022", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
