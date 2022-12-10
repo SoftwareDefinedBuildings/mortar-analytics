@@ -384,8 +384,8 @@ if __name__ == "__main__":
     plot_folder = "./figures"
 
     # time interval for to download data
-    start = dtutil.dt2ts(dtutil.strptime_tz("8-01-2022", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("12-03-2022", "%m-%d-%Y"))
+    start = dtutil.dt2ts(dtutil.strptime_tz("9-01-2022", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("01-03-2023", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
