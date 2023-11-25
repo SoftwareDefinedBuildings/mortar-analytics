@@ -1,0 +1,2104 @@
+import pymortar
+import sys
+import pandas as pd
+import numpy as np
+import os
+import time
+
+from os.path import join
+import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
+from scipy.stats import gaussian_kde
+
+from fault_tests import fault_sensor_inactivity, fault_sensor_out_of_range
+
+log_details = True
+
+def _query_and_qualify():
+    """
+    Build query to return control valves, up- and down- stream air temperatures relative to the
+    valve, and other related data. Then qualify which sites can run this app.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    query: dictionary containing query, sites, and qualify response
+
+    """
+
+    # connect to client
+    client = pymortar.Client()
+
+    # initialize container for query information
+    query = dict()
+
+    # define query to analyze VAV valves
+    vav_query = """SELECT *
+    WHERE {
+        ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
+        ?equip        brick:isFedBy+              ?ahu .
+        ?vlv          rdf:type                    ?vlv_type .
+        ?ahu          brick:hasPoint              ?upstream_ta .
+        ?equip        brick:hasPoint              ?dnstream_ta .
+        ?upstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+        ?dnstream_ta  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+        ?equip        brick:hasPoint              ?vlv .
+        ?vlv          rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+    };"""
+
+    fan_query = """SELECT *
+    WHERE {
+        ?equip        rdf:type/rdfs:subClassOf?   brick:VAV .
+        ?equip        brick:hasPoint              ?air_flow .
+        ?air_flow     rdf:type/rdfs:subClassOf*   brick:Supply_Air_Flow_Sensor .
+    };"""
+
+    # define queries to analyze AHU valves
+    ahu_sa_query = """SELECT *
+    WHERE {
+        ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+        ?vlv        rdf:type                    ?vlv_type .
+        ?equip      brick:hasPoint              ?vlv .
+        ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
+        ?air_temps  rdf:type/rdfs:subClassOf*   brick:Supply_Air_Temperature_Sensor .
+        ?equip      brick:hasPoint              ?air_temps .
+        ?air_temps  rdf:type                    ?temp_type .
+    };"""
+
+    ahu_ra_query = """SELECT *
+    WHERE {
+        ?vlv        rdf:type/rdfs:subClassOf*   brick:Valve_Command .
+        ?vlv        rdf:type                    ?vlv_type .
+        ?equip      brick:hasPoint              ?vlv .
+        ?equip      rdf:type/rdfs:subClassOf*   brick:Air_Handling_Unit .
+        ?air_temps  rdf:type/rdfs:subClassOf*   brick:Return_Air_Temperature_Sensor .
+        ?equip      brick:hasPoint              ?air_temps .
+        ?air_temps  rdf:type                    ?temp_type .
+    };"""
+
+    # find sites with these sensors and setpoints
+    qualify_vav_resp = client.qualify([vav_query])
+    qualify_sa_resp = client.qualify([ahu_sa_query])
+    qualify_ra_resp = client.qualify([ahu_ra_query])
+    qualify_fan_resp = client.qualify([fan_query])
+
+    if qualify_vav_resp.error != "":
+        print("ERROR: ", qualify_vav_resp.error)
+        sys.exit(1)
+    elif len(qualify_vav_resp.sites) == 0:
+        print("NO SITES RETURNED")
+        sys.exit(0)
+
+    vav_sites = qualify_vav_resp.sites
+    ahu_sites = np.intersect1d(qualify_sa_resp.sites, qualify_ra_resp.sites)
+    tlt_sites = np.union1d(vav_sites, ahu_sites)
+    print("running on {0} sites".format(len(tlt_sites)))
+
+    # save queries
+    query['query'] = dict()
+    query['query']['vav'] = vav_query
+    query['query']['ahu_sa'] = ahu_sa_query
+    query['query']['ahu_ra'] = ahu_ra_query
+    query['query']['air_flow'] = fan_query
+
+    # save qualify responses
+    query['qualify'] = dict()
+    query['qualify']['vav'] = qualify_vav_resp
+    query['qualify']['ahu_sa'] = qualify_sa_resp
+    query['qualify']['ahu_ra'] = qualify_ra_resp
+    query['qualify']['air_flow'] = qualify_fan_resp
+
+    # save sites
+    query['sites'] = dict()
+    query['sites']['vav'] = vav_sites
+    query['sites']['ahu'] = ahu_sites
+    query['sites']['tlt'] = tlt_sites
+
+    return query
+
+
+def _fetch(query, eval_start_time, eval_end_time, window=15):
+    """
+    Build the fetch query and define the time interval for analysis
+
+    Parameters
+    ----------
+    query: dictionary containing query, sites, and qualify response
+
+    eval_start_time : start date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                      comfort evaluation period
+
+    eval_end_time : end date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                    comfort evaluation period
+
+    window : aggregation window, in minutes, to average the raw measurement data
+
+
+    Returns
+    -------
+    fetch_resp : Mortar FetchResponse object
+
+    """
+
+    # connect to client
+    client = pymortar.Client()
+
+    # build the fetch request for the vav valves
+    vav_request = pymortar.FetchRequest(
+        sites=query['sites']['vav'],
+        views=[
+            pymortar.View(
+                name="dnstream_ta",
+                definition=query['query']['vav'],
+            ),
+            pymortar.View(
+                name="air_flow",
+                definition=query['query']['air_flow']
+            ),
+        ],
+        dataFrames=[
+            pymortar.DataFrame(
+                name="vlv",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?vlv"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="air_flow",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="air_flow",
+                        dataVars=["?air_flow"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="dnstream_ta",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?dnstream_ta"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="upstream_ta",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?upstream_ta"],
+                    )
+                ]
+            ),
+        ],
+        time=pymortar.TimeParams(
+            start=eval_start_time,
+            end=eval_end_time,
+        )
+    )
+
+
+    # build the fetch request for the ahu valves
+    ahu_request = pymortar.FetchRequest(
+        sites=query['sites']['ahu'],
+        views=[
+            pymortar.View(
+                name="dnstream_ta",
+                definition=query['query']['ahu_sa'],
+            ),
+            pymortar.View(
+                name="upstream_ta",
+                definition=query['query']['ahu_ra'],
+            ),
+        ],
+        dataFrames=[
+            pymortar.DataFrame(
+                name="ahu_valve",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?vlv"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="dnstream_ta",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="dnstream_ta",
+                        dataVars=["?air_temps"],
+                    )
+                ]
+            ),
+            pymortar.DataFrame(
+                name="upstream_ta",
+                aggregation=pymortar.MEAN,
+                window="15m",
+                timeseries=[
+                    pymortar.Timeseries(
+                        view="upstream_ta",
+                        dataVars=["?air_temps"],
+                    )
+                ]
+            ),
+        ],
+        time=pymortar.TimeParams(
+            start=eval_start_time,
+            end=eval_end_time,
+        )
+    )
+
+    # call the fetch api for VAV data
+    fetch_resp_vav = client.fetch(vav_request)
+
+    print("-----Dataframe for VAV valves-----")
+    print(fetch_resp_vav)
+    print(fetch_resp_vav.view('dnstream_ta'))
+
+    # call the fetch api for AHU data
+    fetch_resp_ahu = client.fetch(ahu_request)
+    ahu_metadata = reformat_ahu_view(fetch_resp_ahu)
+
+    print("-----Dataframe for AHU valves-----")
+    print(fetch_resp_ahu)
+    print(ahu_metadata)
+
+    # save fetch responses
+    fetch_resp = dict()
+    fetch_resp['vav'] = fetch_resp_vav
+    fetch_resp['ahu'] = fetch_resp_ahu
+
+    return fetch_resp
+
+
+def reformat_ahu_view(fetch_resp_ahu):
+    """
+    Rename, reformat, and delete cooling valves from ahu metadata
+
+    Parameters
+    ----------
+    fetch_resp_ahu : Mortar FetchResponse object for AHU data
+
+    Returns
+    -------
+    ahu_metadata: Pandas object with AHU metadata and no valves used for cooling
+
+    """
+    # supply air temp metadata
+    ahu_sa = fetch_resp_ahu.view('dnstream_ta')
+    ahu_sa = ahu_sa.rename(columns={'air_temps': 'dnstream_ta', 'temp_type': 'dnstream_ta', 'air_temps_uuid': 'dnstream_ta uuid'})
+
+    # return air temp metadata
+    ahu_ra = fetch_resp_ahu.view('upstream_ta')
+    ahu_ra = ahu_ra.rename(columns={'air_temps': 'upstream_ta', 'temp_type': 'upstream_type', 'air_temps_uuid': 'upstream_ta uuid'})
+
+    # join supply and return air temperature data into on dataset
+    ahu_metadata = ahu_sa.merge(ahu_ra, on=['vlv', 'equip', 'vlv_type', 'site'], how='inner')
+
+    # delete cooling valve commands
+    heat_vlv = [x not in ['Cooling_Valve_Command'] for x in ahu_metadata['vlv_type']]
+
+    return ahu_metadata[heat_vlv]
+
+
+def _clean_vav(fetch_resp_vav, row):
+    """
+    Make a pandas dataframe with relavent vav data for the specific valve 
+    and clean from NA values. Calculate temperature difference between
+    downstream and upstream air temperatures.
+
+    Parameters
+    ----------
+    fetch_resp_vav : Mortar FetchResponse object for the vav data
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    Returns
+    -------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    """
+
+    df_flow = get_vav_flow(fetch_resp_vav, row, fillna=None)
+
+    # combine data points in one dataframe
+    vav_sa = fetch_resp_vav['dnstream_ta'][row['dnstream_ta_uuid']]
+    ahu_sa = fetch_resp_vav['upstream_ta'][row['upstream_ta_uuid']]
+    vlv_po = fetch_resp_vav['vlv'][row['vlv_uuid']]
+
+    if df_flow is not None:
+        vav_df = pd.concat([ahu_sa, vav_sa, vlv_po, df_flow], axis=1)
+        vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po', 'air_flow']
+
+    else:
+        vav_df = pd.concat([ahu_sa, vav_sa, vlv_po], axis=1)
+        vav_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
+
+    return vav_df
+
+
+def calc_add_features(vav_df, drop_na=False, drop_neg_diff=False):
+    """
+    Calculate additional features needed to run the analysis
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    drop_na: Boolean to indicate if NAs in dataframe need to drop
+
+    drop_neg_diff: Boolean to indicate if negative difference between
+        downstream and upstream need to be dropped
+
+    Returns
+    -------
+    vav_df: Pandas dataframe with valve timeseries data with additional
+        features
+    """
+
+    # identify when valve is open
+    vav_df['vlv_open'] = vav_df['vlv_po'] > 0
+
+    # calculate temperature difference between downstream and upstream air
+    vav_df['temp_diff'] = vav_df['dnstream_ta'] - vav_df['upstream_ta']
+
+    # drop na
+    if drop_na:
+        vav_df = vav_df.dropna(subset=['dnstream_ta', 'upstream_ta'])
+
+    # drop values where vav supply air temperature is less than ahu supply air
+    if drop_neg_diff:
+        vav_df = vav_df[vav_df['temp_diff'] >= 0]
+
+    return vav_df
+
+
+def calc_smooth_temp_diff(vlv_df):
+    """
+    Calculate smoothed temperature difference
+    """
+    alpha = 0.98
+    dn_stream_temp = vlv_df["dnstream_ta"]
+    up_stream_temp = vlv_df["upstream_ta"]
+
+    smooth_diff = []
+    smooth_t = vlv_df[vlv_df["cons_ts"], "temp_diff"][0]
+    for ts in range(len(dn_stream_temp)):
+        if vlv_df["cons_ts"][ts]:
+            smooth_t = alpha*smooth_t + (1-alpha)*(dn_stream_temp[ts] - up_stream_temp[ts])
+
+        smooth_diff.append(smooth_t)
+
+    vlv_df["smooth_temp_diff"] = smooth_diff
+    vlv_df.loc[~vlv_df["cons_ts"], "smooth_temp_diff"] = np.nan
+
+
+def determine_timestamp_interval(df):
+    """
+    Determine time interval for dataframe
+    """
+
+    ts = pd.Series(df.index)
+    ts_int = (ts - ts.shift(1))
+
+    int_freq = ts_int.value_counts()
+
+    window = int_freq.index[0]
+
+    return window
+
+
+def drop_unoccupied_dat(df, row=None, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=False, af_accu_factor=0.5):
+    """
+    Drop data rows from dataframe for timeseries that are during unoccupied hours. Uses airflow
+    data if available else it uses building occupancy hours.
+
+    Parameters
+    ----------
+    df: Pandas dataframe object with timeseries data
+
+    occ_str: float number indicating start of building occupancy
+
+    occ_end: float number indicating end of building occupancy
+
+    wkend_str: int number indicating start of weekend. 5 indicates Saturday and 6 indicates Sunday
+
+    air_flow_required: boolean indicating if airflow rate measurements are required in the analysis
+
+    af_accu_factor: float number indicating the degree of airflow rate measurement accuracy e.g.
+        a 1 represent highly accurate airflow rate sensor measurement and 0 highly inaccurate measurement.
+        Default to 0.5.
+
+    Returns
+    -------
+    df: Pandas dataframe with data values during building occupancy hours
+    """
+
+    if 'air_flow' in df.columns:
+        # drop values where there is no air flow
+        density_df = df.loc[:, ['air_flow', 'temp_diff']].dropna()
+
+        if not density_df.empty:
+            xs, ys = density_data(density_df['air_flow'], rescale_dat=density_df['temp_diff'])
+            min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
+            max_idx = return_extreme_points(ys, type_of_extreme='max', sort=False)
+
+            min_air_flow = calc_min_air_flow_cutoff(xs, max_idx, min_idx, af_accu_factor)
+
+            # return calculated results
+            if row is not None:
+                row.update({"minimum_air_flow_cutoff": round(min_air_flow,1)})
+
+            df = df.loc[df['air_flow'] > min_air_flow]
+        else:
+            df = occupied_hours_subset(df, occ_str, occ_end, wkend_str)
+    elif 'air_flow' not in df.columns and air_flow_required:
+        df = pd.DataFrame()
+    else:
+        # drop values outside occupancy hours
+        print("No airflow data, using explicit occupancy hours to do analysis.")
+        df = occupied_hours_subset(df, occ_str, occ_end, wkend_str)
+
+    if row is not None:
+        return df, row
+    else:
+        return df
+
+
+def calc_min_air_flow_cutoff(xs, max_idx, min_idx, af_accu_factor=None):
+
+    if min_idx is not None:
+        low_air_flow = xs[min_idx[0]]
+    else:
+        low_air_flow = np.percentile(xs, 5)
+
+    if max_idx is not None:
+        zero_air_flow = xs[max_idx[0]]
+    else:
+        zero_air_flow = 0
+
+    # take into account the accuracy of the airflow rate measurement if known
+    if af_accu_factor is not None:
+        min_air_flow = (1-af_accu_factor)*(low_air_flow-zero_air_flow) + zero_air_flow
+    else:
+        min_air_flow = low_air_flow
+
+    return min_air_flow
+
+
+def get_vav_flow(fetch_resp_vav, row, fillna=None):
+    """
+    Return VAV supply air flow
+
+    Parameters
+    ----------
+    fetch_resp_vav : Mortar FetchResponse object for the vav data
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    fillna: Method to use for filling na values in dataframe. Options: backfill, bfill, pad, ffill, None
+
+    Returns
+    -------
+    df_flow: Pandas dataframe with vav supply air flow timeseries data
+    """
+
+    # fine corresponding air flow sensor for vav
+    flow_view = fetch_resp_vav.view('air_flow')
+    flow_meta = flow_view.loc[np.logical_and(flow_view['equip'] == row['equip'], flow_view['site'] == row['site'])]
+
+    fidx = 0
+    if flow_meta.shape[0] > 1:
+        print("Multiple airflow sensors found for VAV {} in site {}! \
+               Please check. Will continue using the first sensor.".format(row['equip'], row['site']))
+        print(flow_meta)
+        time.sleep(3)
+    if flow_meta.shape[0] == 0:
+        return None
+
+    # return air flow timeseries data
+    flow_id = flow_meta.loc[flow_meta.index[fidx], 'air_flow_uuid']
+    df_flow = fetch_resp_vav['air_flow'].loc[:, flow_id]
+
+    if fillna is not None:
+        # fill na values
+        df_flow = df_flow.fillna(method=fillna)
+
+    return df_flow
+
+
+def occupied_hours_subset(df, occ_str, occ_end, wkend_str=5, timestamp_col=None):
+    """
+    Returns data containing values during building occupancy of Pandas DataFrame
+
+    Parameters
+    ----------
+    df: Pandas dataframe object with timeseries data
+
+    occ_str: float number indicating start of building occupancy
+
+    occ_end: float number indicating end of building occupancy
+
+    wkend_str: int number indicating start of weekend. 5 indicates Saturday and 6 indicates Sunday
+
+    timestamp_col: If timeseries object is not defined in the index of the pandas dataframe then 
+            input the column name containing the timeseries
+
+    Returns
+    -------
+    df_is_occupied: Pandas dataframe with data values during building occupancy hours
+    """
+    # define the timeseries data
+    if timestamp_col is None:
+        df_ts = df.index
+    else:
+        df_ts = df[timestamp_col]
+
+    bool_str_hr = (df_ts.hour + df_ts.minute/60.0) >= occ_str
+    bool_end_hr = (df_ts.hour + df_ts.minute/60.0) <= occ_end
+    bool_is_weekday = df_ts.weekday < 5 # 5 and 6 are Sat and Sun, respectively
+
+    is_occupied = np.logical_and(bool_str_hr, bool_end_hr, bool_is_weekday)
+
+    return df[is_occupied]
+
+
+def _clean_ahu(fetch_resp_ahu, row):
+    """
+    Make a pandas dataframe with relavent ahu data for the specific valve 
+    and clean from NA values.
+
+    Parameters
+    ----------
+    fetch_resp_ahu : Mortar FetchResponse object for the AHU data
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    Returns
+    -------
+    ahu_df: Pandas dataframe with valve timeseries data
+
+    """
+    dnstream = fetch_resp_ahu['dnstream_ta'][row['dnstream_ta uuid']]
+    upstream = fetch_resp_ahu['upstream_ta'][row['upstream_ta uuid']]
+
+    vlv_po = fetch_resp_ahu['ahu_valve'][row['vlv_uuid']]
+
+    ahu_df = pd.concat([upstream, dnstream, vlv_po], axis=1)
+    ahu_df.columns = ['upstream_ta', 'dnstream_ta', 'vlv_po']
+
+    return ahu_df
+
+
+######
+# define tools
+# TODO: Separate the tools into a new python file
+######
+
+def scale_0to1(vals):
+    """
+    Scale pandas series object data from 0 to 1
+
+    Parameters
+    ----------
+    vals: Pandas series object or Pandas dataframe colum to scale from 0 to 1.
+
+    Returns
+    -------
+    scaled_vals: Pandas series object with values scaled from 0 to 1
+    """
+
+    max_val = vals.max()
+    min_val = vals.min()
+
+    scaled_vals = (vals - min_val) / (max_val - min_val)
+
+    return scaled_vals
+
+
+def rescale_fit(scaled_vals, vals=None, max_val=None, min_val=None):
+    """
+    Rescale values of pandas series that are 0 to 1 to match the interval
+    of another pandas series object values
+
+    Parameters
+    ----------
+    scaled_vals: Pandas series object with values scaled from 0 to 1 and needs to be unscaled
+
+    vals: Pandas series object or Pandas dataframe colum with unnormalized values.
+        This is used to extract max and min to unscaled the scaled_vals.
+
+    max_val: a float number indicating the maximum value to rescale vector. Must
+        also define min_val.
+
+    min_val: a float number indicating the minimum value to rescale vector. Must
+        also define max_val.
+
+    Returns
+    -------
+    unscaled_vals: Pandas series object of unscaled values
+    """
+
+    if vals is not None:
+        max_val = vals.max()
+        min_val = vals.min()
+    elif (max_val is None) or (min_val is None):
+        raise ValueError('Need to define vals dataframe or both maximum and minimum values for rescale!')
+
+    unscaled_vals = min_val + scaled_vals*(max_val - min_val)
+
+    return unscaled_vals
+
+
+def sigmoid(x, k, x0):
+    """
+    Sigmoid function curve to do a logistic model
+
+    Parameters
+    ----------
+    x: independent variable
+    k: slope of the sigmoid function
+    x0: midpoint/inflection point of the sigmoid function
+    y_max: maximum value of data
+    y_min: minimum value of data
+
+    Returns
+    -------
+    y: value of the function at point x
+    """
+    y_max=1
+    y_min=0
+    return y_min + ((y_max - y_min) / (1 + np.exp(-k * (x - x0))))
+
+def sigmoid_prime(x, k, x0, y_max=1, y_min=0):
+    """
+    derivative of sigmoid function
+
+    Parameters
+    ----------
+    x: independent variable
+    k: slope of the sigmoid function
+    x0: midpoint/inflection point of the sigmoid function
+    y_max: maximum value of data
+    y_min: minimum value of data
+
+    Returns
+    -------
+    y: value of the function at point x
+    """
+    num = (y_max-y_min)*np.exp(-k * (x - x0))
+    den = (1 + np.exp(-k * (x - x0)))**2
+
+    return num/den
+
+def make_sigmoid_func(y_max=1, y_min=0):
+
+    def sigmoid(x, k, x0):
+        return y_min + (y_max - y_min) / (1 + np.exp(-k * (x - x0)))
+
+    return sigmoid
+
+
+def build_logistic_model(df, x_col='vlv_po', y_col='temp_diff', scaled=False):
+    """
+    Build a logistic model with data provided
+
+    Parameters
+    ----------
+    df: Pandas dataframe object with x and y variables to make model
+
+    x_col: column name that contains x, independent, variable
+
+    y_col: column name that contains y, dependent, variable
+
+    Returns
+    -------
+    df_fit: Pandas dataframe object with y_fitted values to a logistic model
+
+    popt: an array of the optimized parameters, slope and inflection point of the sigmoid function
+    """
+
+    # remove nan from data
+    df = df.dropna(subset=[x_col, y_col])
+
+    try:
+        # fit the curve
+        if scaled:
+            scaled_pos = scale_0to1(df[x_col])
+            scaled_t = scale_0to1(df[y_col])
+            sigmoid_func = sigmoid
+            popt, pcov = curve_fit(sigmoid_func, scaled_pos, scaled_t)
+
+            # calculate fitted temp difference values
+            est_k, est_x0 = popt
+            # popt[1] = rescale_fit(popt[1], df[x_col])
+            y_fitted = rescale_fit(sigmoid_func(scaled_pos, est_k, est_x0), df[y_col])
+            y_fitted.name = 'y_fitted'
+        else:
+            x_vals = df[x_col]
+            y_vals = df[y_col]
+            y_max = max(y_vals)
+            y_min = min(y_vals)
+            sigmoid_func = make_sigmoid_func(y_max, y_min)
+
+            popt, pcov = curve_fit(sigmoid_func, x_vals, y_vals)
+            est_k, est_x0 = popt
+            y_fitted = sigmoid_func(x_vals, est_k, est_x0)
+            y_fitted.name = 'y_fitted'
+
+        # make sure model goes from 0 to 100 percent
+        model_interval = 1
+        x_ext_vals = range(0,100+model_interval,model_interval)
+        y_ext_vals = sigmoid_func(x_ext_vals, est_k, est_x0)
+        df_ext = pd.DataFrame({'vlv_po': x_ext_vals, 'y_fitted': y_ext_vals})
+
+        # add extra values and sort values
+        df_fit = pd.concat([df[x_col], y_fitted], axis=1)
+        df_fit = pd.concat([df_fit, df_ext])
+        df_fit = df_fit.sort_values(by=x_col).reset_index(drop=True)
+
+    except RuntimeError:
+        print("Model unabled to be developed\n")
+        return None, None
+
+    return df_fit, popt
+
+
+def try_limit_dat_fit_model(vlv_df, df_fraction):
+    # calculate fit model
+    nrows, ncols = vlv_df.shape
+    some_pts = np.random.choice(nrows, int(nrows*df_fraction))
+    try:
+        df_fit, popt = build_logistic_model(vlv_df.iloc[some_pts])
+    except RuntimeError:
+        try:
+            df_fit, popt = build_logistic_model(vlv_df)
+        except RuntimeError:
+            print("No regression found")
+            df_fit = None
+    return df_fit
+
+
+def check_folder_exist(folder):
+    """
+    Check the existance of the defined folder. If it does
+    not exist, then create folder.
+
+    Parameters
+    ----------
+    folder: name of path to check its existance
+
+    Returns
+    -------
+    None
+    """
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+
+def setup_logging(outfolder='./'):
+    """
+    Setup logging if enabled
+    Parameters
+    ----------
+    log_details: Boolean indicating if detailed logging should be enabled
+    """
+    import logging
+    # Setup logging
+    log_file_name = join(outfolder, "vav_app_details.log")
+    logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+
+    global logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+
+    c_handler = logging.StreamHandler(sys.stdout)
+    f_handler = logging.FileHandler(log_file_name)
+
+    logger.addHandler(c_handler)
+    logger.addHandler(f_handler)
+
+
+def calc_long_t_diff(vlv_df):
+    """
+    Calculate statistics on difference between down- and up-
+    stream temperatures to determine the long term temperature difference
+    when valve is closed.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    Returns
+    -------
+    long_t: dictionary object with statisitics of temperature difference
+    """
+
+    if vlv_df is None:
+        return None
+
+    df_vlv_close = vlv_df.loc[np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady'])]
+    if df_vlv_close is None:
+        return None
+
+    long_t = df_vlv_close['temp_diff'].describe()
+
+    return long_t
+
+
+def calc_heat_transfer(df, long_term_temp_diff=None, window=None):
+    """
+    Calculate heat transfer from heating coils to air
+
+    Parameters
+    ----------
+    df: pandas dataframe containing the columns 
+        "air_flow" (airflow rate in cubic feet per second) and
+        "temp_diff" (temperature difference [Tsuppy_vav - Tsupply_ahu])
+
+    long_term_temp_diff: average temperature difference when vav reheat
+        valve is closed
+
+    window: pandas timedelta object indicating timestamp interval
+
+    """
+    RHO_AIR = 0.07516 # [lb/ft3] @20C at sea level
+    Cp_AIR = 0.2402 # [Btu/lb-F] @20C at sea level
+
+    if window is None:
+        window = determine_timestamp_interval(df)
+
+    window_int = window.seconds/3600
+
+    temp_diff = df["temp_diff"]
+    if long_term_temp_diff is not None:
+        delta_temp = (temp_diff-long_term_temp_diff)
+    else:
+        delta_temp = temp_diff
+
+    if 'air_flow' in df.columns:
+        temp_diff = df["temp_diff"]
+        air_flow = df["air_flow"]
+
+        heat_power_xfr = 60*RHO_AIR*Cp_AIR*air_flow*delta_temp # [Btu/hr]
+        heat_energy_xfr = heat_power_xfr*window_int # [Btu]
+    else:
+        print("No air flow!")
+        return None
+
+    return (round(np.mean(heat_power_xfr), 1), round(sum(heat_energy_xfr), 1))
+
+
+def calc_long_tc_ratio(vlv_df):
+    close_vlv_df = vlv_df.loc[np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady'])]
+    long_tc_ratio = (close_vlv_df.shape[0]/vlv_df.shape[0])*100
+
+    return long_tc_ratio
+
+
+def check_consecutive_timestamps(df, window=None):
+    """
+    Check if timestamps are consecutive in dataframe or series
+    Parameters
+    ----------
+    df: Pandas dataframe with valve timeseries data
+
+    Returns
+    -------
+    List: boolean lsit indicating if timestamps are consecutive
+    """
+    if window is None:
+        window = determine_timestamp_interval(df)
+
+    ts = pd.Series(df.index)
+    cons_ts = ((ts.shift(-1) - ts) <= window)
+
+    return list(cons_ts)
+
+
+def analyze_timestamps(vlv_df, th_time, window=None):
+    """
+    Analyze timestamps to make sure they are consecutive
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    th_time: length of time, in minutes, after the valve is closed to determine if
+        valve operating point is malfunctioning e.g. allow enough time for residue heat to
+        dissipate from the coil. Recommended time for reheat coils > 12 minutes.
+
+    window : aggregation window, in minutes, to average the raw measurement data
+
+    Returns
+    -------
+    vav_df: same input pandas dataframe but with added columns indicating:
+        cons_ts: boolean indicating consecutive timestamps
+        cons_ts_vlv_c: boolean indicating consecutive timestamps when valve is commanded closed
+        same: boolean indicating group number of cons_ts_vlv_c
+    """
+    if window is None:
+        window = determine_timestamp_interval(vlv_df)
+
+    window_int = window.seconds/60
+    min_ts = int(th_time/window_int) + (th_time % window_int > 0)
+
+    # only get consecutive timestamps datapoints
+    cons_ts = check_consecutive_timestamps(vlv_df, window)
+
+    if (len(cons_ts) < min_ts) | ~(np.any(cons_ts)):
+        return None
+
+    vlv_df.loc[:, 'cons_ts'] = np.array(cons_ts)
+    vlv_df.loc[:, 'cons_ts_vlv_c'] = np.logical_and(~vlv_df['vlv_open'], vlv_df['cons_ts'])
+    vlv_df.loc[:, 'same'] = vlv_df['cons_ts_vlv_c'].astype(int).diff().ne(0).cumsum()
+
+    return vlv_df
+
+
+def analyze_steady_vs_transient(vlv_df, row=None, project_folder='./'):
+    """
+    Analyze valve operation in a pandas dataframe to determine which row values 
+    are th_time minutes after a changed state e.g. determine which data corresponds
+    to steady-state and transient values.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific vav valve
+
+    project_folder: name of path for the project and used to save the plot.
+
+    Returns
+    -------
+    vav_df: same input pandas dataframe but with added columns indicating:
+        steady: boolean indicating if the timestamp is in steady state condition
+    """
+
+    if vlv_df is None:
+        return None
+
+    min_tst = pd.Timedelta(th_time, unit='min')
+
+    # subset by consecutive times that exceed th_time
+    lal = vlv_df.groupby('same')
+
+    steady = []
+    for grp in lal.groups.keys():
+        for ts in lal.groups[grp]:
+            init_ts = lal.groups[grp][0]
+            steady.append(init_ts+min_tst < ts)
+
+    vlv_df.loc[:, 'steady'] = np.array(steady)
+
+    # save csv data if row is defined
+    if row is not None:
+        _name = "{}-{}-{}_dat".format(row['site'], row['equip'], row['vlv'])
+
+        full_path = rename_existing(join(project_folder, csv_folder, _name + '.csv'), idx=0, row=row)
+        vlv_df.to_csv(full_path, index_label="Time")
+
+    # drop rows of data where valve position is unknown
+    vlv_df = vlv_df.dropna(subset=['vlv_po'])
+
+    return vlv_df
+
+
+def return_extreme_points(dat, type_of_extreme=None, n_modes=None, sort=True):
+    """
+    Return the peak and troughs of a multimodal distribution of a vector.
+
+    Parameters
+    ----------
+    dat: vector of data points to develop a distribution
+
+    type_of_extreme: type of extremes to return. If None it will return minimum
+        and maximum points.
+
+    n_modes: number of distribution peaks or troughs to return. If greater than 1
+        it will return the largest or smallest.
+
+    sort: sort the peak/trough values from smallest to largest.
+
+    Returns
+    -------
+    idx: indeces of the peaks or troughs of the multimodal distribution.
+    """
+
+    a = np.diff(dat)
+    asign = np.sign(a)
+
+    signchg = ((np.roll(asign, 1) - asign) != 0).astype(int)
+    idx = np.where(signchg == 1)[0]
+
+    # delete extreme points
+    if 0 in idx:
+        idx = np.delete(idx, 0)
+
+    if (len(dat) - 1) in idx:
+        idx = np.delete(idx, len(dat)-1)
+
+    idx_num = len(idx)
+    if idx_num < 2:
+        return None
+    else:
+        type_of = []
+        if dat[idx[0]] > dat[idx[1]]:
+            # if true then starting inflection point is a maximum
+            type_of = np.array(['max']*idx_num)
+            type_of[1:][::2] = 'min'
+        elif dat[idx[0]] < dat[idx[1]]:
+            # if true then starting inflection point is a minimum
+            type_of = np.array(['min']*idx_num)
+            type_of[1:][::2] = 'max'
+
+        # return requested inflection points
+        if type_of_extreme == 'max':
+            idx = idx[type_of == 'max']
+        elif type_of_extreme == 'min':
+            idx = idx[type_of == 'min']
+        else:
+            print('Returning all inflection points')
+
+        if sort or n_modes is not None:
+            idx = idx[np.argsort(dat[idx])]
+
+        if n_modes is not None:
+            if type_of_extreme == 'max':
+                idx = idx[(-1*n_modes):]
+            elif type_of_extreme == 'min':
+                idx = idx[:n_modes]
+
+        return idx
+
+
+def _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=None, long_tbad=None, long_to=None, df_fit=None, bad_ratio=None, folder='./'):
+    """
+    Make plot showing the correct and bad operating points of the valve control along with helper annotations 
+    e.g. long term average for correct and malfunction operating points when valve is commanded off, model fit, and
+    bad to good operating points.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    long_t: long-term temperature difference between down and up air streams when valve is 
+            commanded close for correct operation
+
+    long_tbad: long-term temperature difference between down and up air streams when valve is 
+            commanded close for malfunction operation
+
+    df_fit: Pandas dataframe object with y_fitted values to a logistic model
+
+    bad_ratio: ratio showing the mulfunction operation points to good operation points
+
+    folder: name of path to save the plot image
+
+    Returns
+    -------
+    None
+    """
+
+    # plot parametes
+    y_max = vlv_df['temp_diff'].max()
+    y_min = vlv_df['temp_diff'].min()
+    x_max = vlv_df['vlv_po'].max()
+    x_min = vlv_df['vlv_po'].min()
+
+    good_oper_color = '#5ab300'
+    bad_oper_color = '#b3005a'
+
+    # plot temperature difference vs valve position
+    fig, ax = plt.subplots(figsize=(8,4.25))
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+    ax.set_ylabel('Temperature difference [°F]', fontsize=12)
+    ax.set_xlabel('Valve opened [%]', fontsize=12)
+    ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left', fontsize=12)
+    ax.set_ylim((min(-2, y_min)*1.02, np.ceil(y_max*1.05)))
+    ax.set_xlim((min(-2, x_min)*1.02, max(100, x_max)*1.02))
+
+
+    if any(vlv_df['good_oper_cat']):
+        ax.scatter(x=vlv_df.loc[vlv_df['good_oper_cat'], 'vlv_po'], y=vlv_df.loc[vlv_df['good_oper_cat'], 'temp_diff'], color = good_oper_color, alpha=1/3, s=10, label='Pred. no fault operation')
+
+    if any(~vlv_df['good_oper_cat']):
+        ax.scatter(x=vlv_df.loc[~vlv_df['good_oper_cat'], 'vlv_po'], y=vlv_df.loc[~vlv_df['good_oper_cat'], 'temp_diff'], color = bad_oper_color, alpha=1/3, s=10, label='Pred. fault operation')
+
+    # if 'color' in vlv_df.columns:
+    #     ax.scatter(x=vlv_df['vlv_po'], y=vlv_df['temp_diff'], color = vlv_df['color'], alpha=1/3, s=10)
+    # else:
+    #     ax.scatter(x=vlv_df['vlv_po'], y=vlv_df['temp_diff'], color = '#005ab3', alpha=1/3, s=10)
+
+    if df_fit is not None:
+        # add fit line
+        ax.plot(df_fit['vlv_po'], df_fit['y_fitted'], linestyle = '--', label='Fitted valve model', color='#5900b3')
+
+    if long_t is not None:
+        # add long-term temperature diff
+        ax.axhline(y=long_t, color='#00b3b3', linestyle = ':', label='Median Tdiff (closed valve-no fault)')
+
+    if long_to is not None:
+        # add long-term temperature diff when valve is only open
+        ax.axhline(y=long_to, color='#00b3b3', linestyle = ':', label='Median Tdiff (open valve-no fault)')
+
+    if long_tbad is not None:
+        ax.axhline(y=long_tbad, color='#ff8cc6', linestyle = '-.', label='Median Tdiff (closed valve-fault)')
+
+    if bad_ratio is not None:
+        # add ratio where presumably passing valve
+        ax.text(.25, 0.98*y_max, "Fault operation proportion={:.1f}%".format(bad_ratio))
+
+    # legend
+    #ax.legend(bbox_to_anchor=(-0.15, -0.44), fontsize=10, markerscale=1, ncol=3, loc='lower left', frameon=False, handletextpad=0.15)
+    ax.legend(bbox_to_anchor=(0.48, -0.48), fontsize=10, markerscale=1, ncol=2, loc='lower center', frameon=False, handletextpad=0.15)
+    fig.subplots_adjust(bottom=0.27)
+
+    plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
+    full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
+    plt.savefig(full_path, dpi=600)
+    plt.close()
+
+
+def rename_existing(path, idx, row):
+    """
+    Check if the file path exists, if it does, then rename.
+
+    Parameters
+    ----------
+    path: name of path to check
+
+    idx: index of duplicate file
+
+    row: Pandas series object with metadata for the specific valve
+    """
+    if os.path.exists(path):
+        print('REPEATED EQUIP for {}-{}-{}'.format(row['site'], row['equip'], row['vlv']))
+        idx+=1
+        head, tail = os.path.split(path)
+        tail = "R" + str(idx) + "-" + tail
+        path = rename_existing(join(head, tail), idx, row)
+
+    return path
+
+def _make_tdiff_vs_aflow_plot(vlv_df, row, folder, af_accu_factor=None):
+    """
+    Create temperature difference versus air flow plots
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    folder: name of path to save the plot image
+
+    Returns
+    -------
+    None
+    """
+
+    # plot parametes
+    closed_vlv_color = '#640064'
+    open_vlv_color = '#006400'
+
+    vlv_df.loc[:, 'color_open'] = closed_vlv_color
+    vlv_df.loc[vlv_df['vlv_open'], 'color_open'] = open_vlv_color
+
+    # plot temperature difference vs valve position
+    fig, ax = plt.subplots(figsize=(8,4.25))
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+    ax.set_ylabel('Temperature difference [°F]', fontsize=12)
+    ax.set_xlabel('Air flow [cfm]', fontsize=12)
+    ax.set_title("Site = {}\nEquip. = {}".format(row['site'], row['equip']), loc='left', fontsize=12)
+
+    if any(~vlv_df['vlv_open']):
+        ax.scatter(x=vlv_df.loc[~vlv_df['vlv_open'], 'air_flow'], y=vlv_df.loc[~vlv_df['vlv_open'], 'temp_diff'], color = closed_vlv_color, alpha=1/3, s=10, label='Closed valve')
+
+    if any(vlv_df['vlv_open']):
+        ax.scatter(x=vlv_df.loc[vlv_df['vlv_open'], 'air_flow'], y=vlv_df.loc[vlv_df['vlv_open'], 'temp_diff'], color = open_vlv_color, alpha=1/3, s=10, label='Open valve')
+    # ax.scatter(x=vlv_df['air_flow'], y=vlv_df['temp_diff'], color = vlv_df['color_open'], alpha=1/3, s=10)
+
+    # create density plot for air flow
+    xs, ys = density_data(vlv_df['air_flow'], rescale_dat=vlv_df['temp_diff'])
+    ax.plot(xs, ys, label='KDE')
+
+    # find modes of the distribution and the trough before/after the modes
+    # max_idx = return_extreme_points(ys, type_of_extreme='max', n_modes=2)
+    max_idx = return_extreme_points(ys, type_of_extreme='max', sort=False)
+    min_idx = return_extreme_points(ys, type_of_extreme='min', sort=False)
+
+    if af_accu_factor is not None:
+        min_air_flow = calc_min_air_flow_cutoff(xs, max_idx, min_idx, af_accu_factor)
+        # plot vertical line
+        ax.axvline(x=round(min_air_flow,1), color='gray', linestyle = '--', label='Minimum operation cutoff')
+
+    if max_idx is not None:
+        ax.scatter(x=xs[max_idx], y=ys[max_idx], color = '#ff0000', alpha=1, s=35, label='Peaks')
+    if max_idx is not None:
+        ax.scatter(x=xs[min_idx], y=ys[min_idx], color = '#ff8000', alpha=1, s=35, label='Troughs')
+
+    # Legend
+    # ax.legend(fontsize=10, markerscale=1, borderaxespad=0., ncol=2, bbox_to_anchor=(.50, 1.02), loc='lower left')
+    ax.legend(bbox_to_anchor=(0.48, -0.40), fontsize=10, markerscale=1, ncol=3, loc='lower center', frameon=False, handletextpad=0.15)
+    fig.subplots_adjust(bottom=0.25)
+
+    plt_name = "{}-{}-{}".format(row['site'], row['equip'], row['vlv'])
+    full_path = rename_existing(join(folder, plt_name + '.png'), idx=0, row=row)
+    plt.savefig(full_path, dpi=600)
+    plt.close()
+
+
+def density_data(dat, rescale_dat=None):
+    """
+    Create a kernel-density estimate using Gaussian kernels and rescale to
+    match the specific valve data.
+
+    Parameters
+    ----------
+    dat: vector of data points to develop a distribution
+
+    rescale_dat: If not None, the data vector is used to determine the peak for rescaling
+        the y values of the density function.
+        If rescale_dat is define as 'norm', ys will be normalized from 0 to 1.
+
+    Returns
+    -------
+    xs: x values of the density function
+
+    ys: y values of the density function
+    """
+    #create data for density plot
+    try:
+        density = gaussian_kde(dat)
+    except:
+        print("NAs exist is airflow data. Will delete them.")
+        density = gaussian_kde(dat[~dat.isna()])
+    xs = np.linspace(0, max(dat), 200)
+
+    density.covariance_factor = lambda : 0.25
+    density._compute_covariance()
+
+    # unscaled y values of density
+    us_ys = density(xs)
+
+    # rescale if rescale_dat is not None
+    if isinstance(rescale_dat, (pd.Series, np.ndarray)):
+        ys = rescale_fit(scale_0to1(us_ys), max_val=np.percentile(rescale_dat, 95), min_val=0)
+    elif isinstance(rescale_dat, str) and 'norm' in rescale_dat:
+        ys = scale_0to1(us_ys)
+    else:
+        ys = us_ys
+
+    return xs, ys
+
+def smooth_ts(val, box_pts):
+    """
+    Apply smoothing function to timeseries values
+    """
+
+    box = np.ones(box_pts)/box_pts
+    val_smooth = np.convolve(val, box, mode='same')
+
+    return val_smooth
+
+
+def find_fault_vlv_operation(vlv_df, row, long_tc, window, th_bad_vlv):
+    """
+    Determine which timeseries values are data from probable passing valves and return 
+    a pandas dataframe of only 'bad' values.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    long_t: long-term temperature difference between down and up air streams when valve is 
+            commanded close for correct operation
+
+    popt: an array of the optimized parameters, slope and inflection point of the sigmoid function
+
+    window : aggregation window, in minutes, to average the raw measurement data
+
+    Returns
+    -------
+    df_bad: pandas dataframe object with the time intervals that the valve is malfunctioning
+
+    pass_type: dictionary with failure modes listed, if any. Possible failure modes are:
+        long_term_fail: long term valve failure if valve seems to be passing for more than number X 
+            minutes defined in global parameter 'long_term_fail'. Default 300 minutes (5 hours).
+        short_term_fail: intermittent valve failure if valve seems to be passing for short periods 
+            (X minutes defined in global parameter 'shrt_term_fail') due to control errors, 
+            mechanical/electrical problems, or other. Default 60 minutes (1 hour).
+    """
+
+    window_int = window.seconds/60
+    pass_type = dict()
+    HI_DIFF_PERCENTILE = 95
+    # MAX_ITER = 5
+
+    def categorize_fault_operation(vlv_df, min_temp_diff_cutoff, iter=1, row=row):
+        # assume median of anything below long_tc deg difference at 0% open valve
+        # and at 95 pct temp diff at > 95% percent open valve
+        ideal_vlv_df = vlv_df.copy(deep=True)
+        closed_valve = ~ideal_vlv_df['vlv_open']
+        below_long_tc = ideal_vlv_df['temp_diff'] < min_temp_diff_cutoff
+
+        adj_delT_at_closed_valve = ideal_vlv_df.loc[np.logical_and(closed_valve, below_long_tc), 'temp_diff'].describe()
+        ideal_vlv_df.loc[closed_valve, 'temp_diff'] = adj_delT_at_closed_valve["50%"]
+
+        hi_diff = np.percentile(ideal_vlv_df.loc[ideal_vlv_df['vlv_open'], 'temp_diff'], HI_DIFF_PERCENTILE)
+        ideal_vlv_df.loc[ideal_vlv_df['vlv_po'] >= 95, 'temp_diff'] = hi_diff
+
+        try:
+            # make a logit regression model assuming that closed valves make a zero temp difference
+            model, popt = build_logistic_model(ideal_vlv_df)
+        except ValueError:
+            import pdb; pdb.set_trace()
+
+        if model is not None:
+            # # analyze sigmoid function
+            # y_max = max(vlv_df['temp_diff'])
+            # y_min = min(vlv_df['temp_diff'])
+            # sigmoid_func = make_sigmoid_func(y_max, y_min)
+            # max_model_diff = round(sigmoid_func(100, popt[0], popt[1]), 1)
+            # if max_model_diff > 2*th_bad_vlv:
+            #     x_prime = range(0,101,1)
+            #     y_prime = sigmoid_prime(x_prime, popt[0], popt[1], y_max, y_min)
+            #     y_prime_norm = y_prime/sum(y_prime)
+
+            #     vlv_start_open = list(x_prime)[sum(np.cumsum(y_prime_norm) < PROBABILITY)]
+            #     diff_vlv_po_th = round(sigmoid_func(vlv_start_open, popt[0], popt[1]), 1)
+            # else:
+            lower_bend = popt[1] - 1.317/popt[0]
+            # if row["equip"] == "VAVRM1013":
+            #     import pdb; pdb.set_trace()
+
+            vlv_position_range = np.logical_and(model['vlv_po'] >= (lower_bend - 2), model['vlv_po'] <= (lower_bend + 2))
+            diff_vlv_po_th = min(model[vlv_position_range]['y_fitted'].mean(), 10)
+
+        #     tdiff_model_max = model[model['vlv_po'] == 100]['y_fitted'].mean()
+        #     if tdiff_model_max > 2*th_bad_vlv:
+        #         hi_diff = max(hi_diff, tdiff_model_max)
+        #         vlv_po_hi_diff = model[model['y_fitted'] >= hi_diff]['vlv_po'].mean()
+
+        #         if vlv_po_hi_diff in [np.nan, None]:
+        #             vlv_po_hi_diff = model[model['y_fitted'] <= hi_diff]['vlv_po'].max()
+
+        #         # define temperature difference and valve position failure thresholds
+        #         vlv_po_th = vlv_po_hi_diff/2.0
+        #         diff_vlv_po_th = max(model[model['vlv_po'] <= vlv_po_th]['y_fitted'].max(), th_bad_vlv)
+        #     else:
+        #         diff_vlv_po_th = max(hi_diff/4.0, th_bad_vlv)
+        else:
+            diff_vlv_po_th = max(hi_diff/4.0, th_bad_vlv/2)
+
+        smooth_box = 3
+        vlv_df["temp_diff_smooth"] = np.nan
+        df_grps = vlv_df.loc[~vlv_df["vlv_open"], :].groupby(["same"])
+        df_grp_count = df_grps["same"].count()
+        for grp in df_grp_count.index.values:
+            if df_grp_count[grp] > smooth_box:
+                df_grp = df_grps.get_group(grp)
+                temp_values = df_grp.loc[df_grp["steady"], "temp_diff"]
+                if len(temp_values) < smooth_box:
+                    continue
+                temp_diff_smooth = smooth_ts(temp_values, smooth_box)
+                vlv_df.loc[temp_values.index, "temp_diff_smooth"] = temp_diff_smooth
+
+        # find datapoints that exceed long-term temperature difference
+        exceed_long_t = vlv_df['temp_diff'] >= diff_vlv_po_th
+        smoothed_threshold = min(adj_delT_at_closed_valve["mean"] + adj_delT_at_closed_valve["std"]*2, diff_vlv_po_th)
+        exceed_long_t_smooth = vlv_df['temp_diff_smooth'] >= smoothed_threshold
+
+        # subset data by consecutive steady state values when valve is commanded closed and 
+        # exceeds long-term temperature difference
+        exceed_long_t_params = np.logical_and(exceed_long_t, exceed_long_t_smooth)
+        th_exceed = np.logical_and(np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady']), exceed_long_t_params)
+        vlv_df["fault_operation"] = th_exceed
+        df_bad = vlv_df.copy(deep=True)
+        df_bad = df_bad[th_exceed]
+
+        # check that stats of fault and normal valve operation
+        # when it is closed do not overlap
+        long_tbad = calc_long_t_diff(df_bad)
+
+        return vlv_df, df_bad, model, popt, long_tbad, adj_delT_at_closed_valve
+
+    # Add boolean indicate if data is above temperature threshold
+    # and above minimum airflow cutoff
+    if "minimum_air_flow_cutoff" in row.keys():
+        is_above_air_flow = vlv_df["air_flow"] > row["minimum_air_flow_cutoff"]
+        is_above_temp = vlv_df["temp_diff"] > th_bad_vlv
+        is_above_thresholds = np.logical_and(is_above_air_flow, is_above_temp)
+    else:
+        is_above_thresholds = vlv_df["temp_diff"] > th_bad_vlv
+
+    vlv_df["abv_thr_temp_airflow"] = is_above_thresholds
+
+
+    try:
+        min_temp_diff_cutoff = min(long_tc["50%"]*2, th_bad_vlv)
+        vlv_df, df_bad, model, popt, long_tbad, adj_delT_at_closed_valve = categorize_fault_operation(vlv_df, min_temp_diff_cutoff)
+    except ValueError:
+        import pdb; pdb.set_trace()
+
+    if df_bad.empty:
+        df_bad = None
+        # vlv_df, df_bad, 
+        return vlv_df, df_bad, pass_type, model, popt
+
+    # verify that temp diff is greater than zero
+
+    # check that timestamps are consecutive in df_bad
+    df_bad_cons_ts = check_consecutive_timestamps(df_bad, window)
+
+    if "minimum_air_flow_cutoff" in row.keys():
+        above_airflow = df_bad["air_flow"] > row["minimum_air_flow_cutoff"]
+        df_bad['cons_ts_fault_vlv'] = np.logical_and(df_bad_cons_ts, above_airflow)
+    else:
+        df_bad['cons_ts_fault_vlv'] = df_bad_cons_ts
+
+    # analyze 'bad' dataframe for possible passing valve
+    df_bad.loc[:, 'same_fault'] = df_bad['cons_ts_fault_vlv'].astype(int).diff().ne(0).cumsum()
+    bad_grp = df_bad.groupby(['same_fault', 'cons_ts_fault_vlv'])
+    bad_grp_count = bad_grp['same_fault'].count()
+
+    idx_const_vals = bad_grp_count.index.get_level_values("cons_ts_fault_vlv").values
+    if not any(idx_const_vals):
+        # not bad values with consecutive timestamps found
+        return vlv_df, df_bad, pass_type, model, popt
+
+    bad_grp_count_cons_ts = bad_grp_count[(slice(None), True)]
+
+    # detect long term failures
+    # TODO: only calculate heat loss for fault timeperiods and not all of "df_bad"
+    long_fault = False
+    long_fault_idx = []
+    long_all_dates = []
+
+    short_fault = False
+    short_fault_idx = []
+    short_all_dates = []
+
+    long_term_fail_bool = (bad_grp_count_cons_ts*window_int) > long_term_fail
+    if any(long_term_fail_bool):
+        long_term_fail_times = bad_grp_count_cons_ts[long_term_fail_bool]*window_int
+        if long_term_fail_times.count() >= 1 or long_term_fail_times.index[-1] == vlv_df['same_fault'].max():
+            long_fault_idx = long_term_fail_times.index.values
+            long_all_dates = [bad_grp.groups[(ky, True)] for ky in long_fault_idx]
+            dates = [(ky[0], ky[-1]) for ky in long_all_dates]
+
+            pass_type['long_term_fail'] = (long_term_fail_times.mean(), long_term_fail_times.count(), dates)
+            long_fault = True
+
+    # detect short term failures
+    bad_grp_left_over = bad_grp_count_cons_ts[~long_term_fail_bool]
+    short_term_fail_bool = (bad_grp_left_over*window_int) > shrt_term_fail
+    if any(short_term_fail_bool):
+        shrt_term_fail_times = bad_grp_left_over[short_term_fail_bool]*window_int
+        if shrt_term_fail_times.count() >= 2 or (shrt_term_fail_times.count() >= 1 and any(long_term_fail_bool)):
+            short_fault_idx = shrt_term_fail_times.index.values
+            short_all_dates = [bad_grp.groups[(ky, True)] for ky in short_fault_idx]
+            dates = [(ky[0], ky[-1]) for ky in short_all_dates]
+
+            pass_type['short_term_fail'] = (shrt_term_fail_times.mean(), shrt_term_fail_times.count(), dates)
+            short_fault = True
+
+    if any([long_fault, short_fault]):
+        # # method 1 of filter fault data: assume all on of one switch is bad
+        # fault_idx = np.append(long_fault_idx, short_fault_idx)
+        # fault_points = df_bad['same'].isin(fault_idx)
+
+        # method 2 of filtering for fault data: more specific by using exact dates
+        fault_idx = []
+        for fault_type in [long_all_dates, short_all_dates]:
+            for fault_dates in fault_type:
+                for fault_ts in fault_dates:
+                    fault_idx.append(fault_ts)
+
+        fault_points = df_bad.index.isin(fault_idx)
+
+        df_heat_loss = df_bad.loc[fault_points]
+        df_heat_intended = vlv_df.loc[np.logical_and(~vlv_df.index.isin(df_heat_loss.index), vlv_df["vlv_open"])]
+        pass_type['heat_loss_pwr-avg_nrgy-sum'] = calc_heat_transfer(df_heat_loss, adj_delT_at_closed_valve["50%"], window)
+        pass_type['heat_intentional_pwr-avg_nrgy-sum'] = calc_heat_transfer(df_heat_intended, adj_delT_at_closed_valve["50%"], window)
+
+        # update fault operation
+        df_bad["fault_operation"] = False
+        df_bad.loc[fault_idx, "fault_operation"] = True
+
+        vlv_df["fault_operation"] = False
+        vlv_df["df_bad"] = False
+
+        vlv_df.loc[fault_idx, "fault_operation"] = True
+        vlv_df.loc[df_bad.index, "df_bad"] = True
+
+    return vlv_df, df_bad, pass_type, model, popt
+
+
+def print_passing_mgs(row):
+    """
+    Print message to user when passing valve is probable
+
+    Parameters
+    ----------
+    row: Pandas series object with metadata for the specific valve
+
+    Returns
+    -------
+    None
+    """
+    print("Probable passing valve '{}' in site {}\n".format(row['vlv'], row['site']))
+
+
+def clean_final_report(final_df, drop_null=True):
+    """
+    Clean final report and sort by greatest number of minutes that fault was detected
+
+    Parameters
+    ----------
+    final_df: pandas dataframe with valve metadata along with failure types detected
+
+    drop_null: boolean to drop rows where no short or long term faults exist for valves.
+
+    Returns
+    -------
+    final_df: cleaned and sorted report
+    """
+    if 'long_term_fail' in final_df.columns:
+        if drop_null:
+            final_df = final_df.loc[np.logical_or(~final_df['long_term_fail'].isnull(), ~final_df['short_term_fail'].isnull())]
+
+        if 'long_term_fail' in final_df.columns:
+            # separate data into multiple columns
+            final_df['long_term_fail_avg_minutes'] = final_df.long_term_fail.str[0]
+            final_df['long_term_fail_num_times_detected'] = final_df.long_term_fail.str[1]
+            final_df['long_term_fail_str_end_dates'] = final_df.long_term_fail.str[2]
+
+            # drop redundant columns
+            final_df = final_df.drop(columns=['long_term_fail'])
+
+        if 'short_term_fail' in final_df.columns:
+            final_df['short_term_fail_avg_minutes'] = final_df.short_term_fail.str[0]
+            final_df['short_term_fail_num_times_detected'] = final_df.short_term_fail.str[1]
+            final_df['short_term_fail_str_end_dates'] = final_df.short_term_fail.str[2]
+
+            # drop redundant columns
+            final_df = final_df.drop(columns=['short_term_fail'])
+
+        avail_cols = list(set(final_df.columns).intersection(set(['long_term_fail_avg_minutes', 'short_term_fail_avg_minutes'])))
+        # sort by highest value faults
+        final_df = final_df.sort_values(by=avail_cols, ascending=False)
+
+    return final_df
+
+
+def analyze_only_open(vlv_df, row, th_bad_vlv, project_folder):
+    """
+    Analyze valve data when there is only open valve data.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    project_folder: name of path for the project and used to save the plot.
+
+    Returns
+    -------
+    pass_type: dictionary with failure modes listed, if any. Possible failure modes are:
+        non_responsive_fail: failure when the valve is open but the median temperature
+            difference when the valve is command open but never goes above the above 
+            the th_bad_vlv threshold.
+    """
+    pass_type = dict()
+
+    long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
+    if long_to['50%'] < th_bad_vlv:
+        print("'{}' in site {} is open but seems to not cause an increase in air temperature\n".format(row['vlv'], row['site']))
+        pass_type['non_responsive_fail_degF'] = round(long_to['50%'], 2)
+        folder = join(project_folder, bad_folder)
+        vlv_df.loc[:, 'good_oper_cat'] = False
+        long_t = None
+        long_tbad = long_to['50%']
+    else:
+        vlv_df.loc[:, 'good_oper_cat'] = True
+        folder = join(project_folder, good_folder)
+        long_t = long_to['50%']
+        long_tbad = None
+
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_to=long_t, long_tbad=long_tbad, folder=folder)
+    pass_type['folder'] = folder
+    row.update({'long_to': round(long_to['50%'], 2), 'folder': folder})
+
+    return pass_type, row
+
+def analyze_only_close(vlv_df, row, th_bad_vlv, project_folder):
+    """
+    Analyze valve data when there is only closed valve data.
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    project_folder: name of path for the project and used to save the plot.
+
+    Returns
+    -------
+    pass_type: dictionary with failure modes listed, if any. Possible failure modes are:
+        simple_fail: failure when the median temperature difference when the valve is commanded
+            closed if above the th_bad_vlv threshold.
+    """
+    pass_type = dict()
+    long_tc = calc_long_t_diff(vlv_df)
+    long_tc_ratio = calc_long_tc_ratio(vlv_df)
+
+    min_temp_diff_cutoff = min(long_tc["50%"]*2, th_bad_vlv)
+
+    ideal_vlv_df = vlv_df.copy(deep=True)
+    closed_valve = ~ideal_vlv_df['vlv_open']
+    below_long_tc = ideal_vlv_df['temp_diff'] < min_temp_diff_cutoff
+
+    adj_delT_at_closed_valve = ideal_vlv_df.loc[np.logical_and(closed_valve, below_long_tc), 'temp_diff'].describe()
+    diff_vlv_po_th = adj_delT_at_closed_valve["mean"] + adj_delT_at_closed_valve["std"]
+
+    exceed_long_t = vlv_df['temp_diff'] >= diff_vlv_po_th
+
+    th_exceed = np.logical_and(np.logical_and(vlv_df['cons_ts_vlv_c'], vlv_df['steady']), exceed_long_t)
+    vlv_df["fault_operation"] = th_exceed
+    df_bad = vlv_df.copy(deep=True)
+    df_bad = df_bad[th_exceed]
+
+    vlv_df.loc[:, 'good_oper_cat'] = True
+    if not df_bad.empty:
+        long_tbad = calc_long_t_diff(df_bad)
+        long_tbad = long_tbad['50%']
+        bad_ratio = 100*(df_bad.shape[0]/vlv_df.shape[0])
+        vlv_df.loc[df_bad.index, 'good_oper_cat'] = False
+    else:
+        bad_ratio = 0
+        long_tbad = None
+
+    if bad_ratio > 10 and pd.notnull(long_tbad) and long_tbad > th_bad_vlv/2.0:
+        print_passing_mgs(row)
+        pass_type['simple_fail_dat-ratio_faultdegf_gooddegF'] = (round(bad_ratio,1), round(long_tbad,1), round(adj_delT_at_closed_valve['50%'], 2))
+        folder = join(project_folder, bad_folder)
+        long_t = adj_delT_at_closed_valve['50%']
+    else:
+        folder = join(project_folder, good_folder)
+        long_t = adj_delT_at_closed_valve['50%']
+        if log_details: logger.info("[{}] is only closed with good operation data".format(row['vlv']))
+
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_t, long_tbad=long_tbad, folder=folder)
+    pass_type['folder'] = folder
+    row.update({'long_t': round(long_tc['50%'], 2), 'folder': folder})
+
+    return pass_type, row
+
+def _analyze_vlv(vlv_df, row, th_bad_vlv=5, th_time=45, project_folder='./', detection_params=None):
+    """
+    Analyze each valve and detect for passing valves
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+        valve operating point is malfunctioning e.g. allow enough time for residue heat to
+        dissipate from the coil.
+
+    project_folder: name of path for the project and used to save the plots and csv data.
+
+    detection_params: dictionary of parameters that control the behavior of the application
+
+    Returns
+    -------
+    None
+    """
+    log_rows_info = True
+    if log_details:
+        setup_logging(outfolder=project_folder)
+
+    # update variables
+    if detection_params is not None:
+        globals().update(detection_params)
+
+    # container for holding types of faults
+    passing_type = dict()
+
+    # files = os.listdir(join("with_airflow_checks", bad_folder))
+    # vav_oi = [entry.split("-")[1] for entry in files]
+    # if row['equip'] in ['VAVRM2323']:
+    #     import pdb; pdb.set_trace()
+
+
+    # calculate additional parameters for analysis
+    vlv_df = calc_add_features(vlv_df, drop_na=True)
+
+    # check for empty dataframe
+    if vlv_df.empty:
+        message = "'{}' in site {} has no data! Skipping...".format(row['vlv'], row['site'])
+        print(message)
+        if log_details: logger.info(message)
+        row.update({'output_details': 'no data after calc features'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
+        return vlv_df, passing_type
+
+    # Analyze timestamps and valve operation changes
+    window = determine_timestamp_interval(vlv_df)
+    vlv_df = analyze_timestamps(vlv_df, th_time, window)
+    vlv_df = analyze_steady_vs_transient(vlv_df, row=row, project_folder=project_folder)
+
+    if vlv_df is None:
+        print("'{}' in site {} has no data after analyzing \
+            consecutive timestamps! Skipping...".format(row['vlv'], row['site']))
+        row.update({'output_details': 'no data after timestamp analysis'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
+        return vlv_df, passing_type
+
+    # check that sensors are not reporting constant numbers
+    vlv_df, passing_type = fault_sensor_inactivity(vlv_df, passing_type)
+
+    # check that sensors are within range
+    vlv_df, passing_type = fault_sensor_out_of_range(vlv_df, passing_type)
+
+
+    if 'air_flow' in vlv_df.columns:
+        # plot temp diff vs air flow
+        _make_tdiff_vs_aflow_plot(vlv_df, row, folder=join(project_folder, 'air_flow_plots'), af_accu_factor=af_accu_factor)
+    else:
+        row.update({'airflow': 'False'})
+
+    # drop data that occurs during unoccupied hours
+    vlv_df, row = drop_unoccupied_dat(vlv_df, row=row, occ_str=6, occ_end=18, wkend_str=5, air_flow_required=air_flow_required, af_accu_factor=af_accu_factor)
+
+    if vlv_df.empty:
+        print("'{}' in site {} has no data after hours of \
+            occupancy check! Skipping...".format(row['vlv'], row['site']))
+        row.update({'output_details': 'no data after occupancy check'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
+        return vlv_df, passing_type
+
+    # determine if valve datastream has open and closed data
+    bool_type = vlv_df['vlv_open'].value_counts().index
+
+    if len(bool_type) < 2:
+        if bool_type[0]:
+            # only open valve data
+            passing_type, row = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
+            row.update({'output_details': 'only open valve data'})
+        else:
+            # only closed valve data
+            passing_type, row = analyze_only_close(vlv_df, row, th_bad_vlv, project_folder)
+            row.update({'output_details': 'only closed valve data'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
+        return vlv_df, passing_type
+
+    # TODO: Figure out what to do if long_tc is None!
+    # calculate long-term temp diff when valve is closed
+    long_tc = calc_long_t_diff(vlv_df)
+    long_to = vlv_df[vlv_df['vlv_open']]['temp_diff'].describe()
+
+    long_tc_ratio = calc_long_tc_ratio(vlv_df)
+
+    if long_tc is None and long_to is not None:
+        pass_type, row = analyze_only_open(vlv_df, row, th_bad_vlv, project_folder)
+        passing_type.update(pass_type)
+        row.update({'output_details': 'no consecutive timestamps and steady state conditions when valve is closed'})
+        if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
+        return vlv_df, passing_type
+
+    # make simple comparison of long-term closed temp difference and user define threshold
+    if long_tc['50%'] > th_bad_vlv:
+        print_passing_mgs(row)
+        #TODO make sure this gets flag as fault and put in bad folder
+        passing_type['simple_fail_dat-ratio_degF'] = (round(long_tc_ratio,1), round(long_tc['50%'], 2))
+
+    # make comparison between long-term open and long-term closed temp difference
+    long_tc_to_diff = (long_tc['mean'] + long_tc['std']) - (long_to['75%'])
+    if long_tc_to_diff > 0:
+        print_passing_mgs(row)
+        passing_type['tc_to_close_fail'] = round(long_tc_to_diff, 2)
+
+    # calculate bad valve instances vs overall dataframe
+    vlv_df, fault_vlv, pass_type, ideal_model, popt = find_fault_vlv_operation(vlv_df, row, long_tc, window, th_bad_vlv)
+    passing_type.update(pass_type)
+
+    if fault_vlv is None:
+        bad_ratio = 0
+        long_tbad = None# long_tc['50%']
+    else:
+        bad_ratio = 100*(fault_vlv[fault_vlv["fault_operation"]].shape[0]/vlv_df.shape[0])
+        long_tbad = fault_vlv['temp_diff'].describe()['50%']
+
+    BAD_RATIO_THRESHOLD = 5
+
+    # estimate size of leak in terms of pct that valve is open
+    if ideal_model is not None and long_tbad is not None:
+        est_leak = ideal_model[ideal_model['y_fitted'] <= long_tbad]['vlv_po'].max()
+        if est_leak > popt[1] and bad_ratio > BAD_RATIO_THRESHOLD:
+            passing_type['leak_grtr_xovr_fail_vlv-pos'] = est_leak
+    else:
+        if fault_vlv is not None:
+            est_leak = long_tbad
+            if est_leak > th_bad_vlv and bad_ratio > BAD_RATIO_THRESHOLD:
+                passing_type['leak_grtr_threshold_fail_degF'] = est_leak
+
+    failure = [x in ['long_term_fail', 'leak_grtr_xovr_fail_vlv-pos', 'leak_grtr_threshold_fail_degF'] for x in passing_type.keys()]
+    if len([x for x in passing_type.keys() if 'sensor_fault' in x]) > 0:
+        folder = join(project_folder, sensor_fault_folder)
+    elif 'long_term_fail' in passing_type.keys() and passing_type['long_term_fail'][1] >= 2 and pd.notnull(long_tbad) and long_tbad > th_bad_vlv/2.0:
+        print_passing_mgs(row)
+        folder = join(project_folder, bad_folder)
+    elif any(failure) and (bad_ratio > BAD_RATIO_THRESHOLD) and pd.notnull(long_tbad) and long_tbad > th_bad_vlv/2.0:
+        print_passing_mgs(row)
+        folder = join(project_folder, bad_folder)
+    elif 'simple_fail_dat-ratio_degF' in passing_type.keys() and (long_tc_ratio > BAD_RATIO_THRESHOLD) and pd.notnull(long_tbad) and long_tbad > th_bad_vlv/2.0:
+        print_passing_mgs(row)
+        folder = join(project_folder, bad_folder)
+    else:
+        folder = join(project_folder, good_folder)
+
+    # categorized good and bad points
+    vlv_df.loc[:, 'good_oper_cat'] = True
+    if fault_vlv is not None:
+        vlv_df.loc[fault_vlv.index, 'good_oper_cat'] = False
+
+    _make_tdiff_vs_vlvpo_plot(vlv_df, row, long_t=long_tc['50%'], long_tbad=long_tbad, df_fit=ideal_model, bad_ratio=bad_ratio, folder=folder)
+    pass_type['folder'] = folder
+    row.update({'long_t': round(long_tc['50%'], 2), 'long_tbad': None if long_tbad is None else round(long_tbad, 2), 'bad_ratio': round(bad_ratio, 2), 'folder': folder})
+
+    if log_rows_info: log_row_details(row, join(project_folder, 'minimum_airflow_values.txt'))
+
+    return vlv_df, passing_type
+
+
+def log_row_details(row, outfolder):
+    """
+    Log information out to external file
+    """
+    with open(outfolder, 'a') as f:
+        f.write(str(row))
+        f.write(',\n')
+
+
+def _analyze_ahu(vlv_df, row, th_bad_vlv, th_time, project_folder):
+    """
+    Helper function to analyze AHU valves
+
+    Parameters
+    ----------
+    vav_df: Pandas dataframe with valve timeseries data
+
+    row: Pandas series object with metadata for the specific valve
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+            valve operating point is malfunctioning e.g. allow enough time for residue heat to
+            dissipate from the coil.
+
+    Returns
+    -------
+    None
+    """
+    if row['upstream_type'] != 'Mixed_Air_Temperature_Sensor':
+        print('No upstream sensor data available for coil in AHU {} for site {}'.format(row['equip'], row['site']))
+        #_make_tdiff_vs_vlvpo_plot(vlv_df, row, folder='./')
+        passing_type = dict()
+    else:
+        passing_type = _analyze_vlv(vlv_df, row, th_bad_vlv, th_time, project_folder)
+
+    return vlv_df, passing_type
+
+
+def _analyze(metadata, fetch_resp, clean_func, analyze_func, th_bad_vlv, th_time, project_folder):
+    """
+    Hi level analyze function that runs through each valve queried to detect passing valves
+
+    Parameters
+    ----------
+    metadata: metadata, i.e. view, for the valves that need to be analyzed
+
+    fetch_resp : Mortar FetchResponse object
+
+    clean_func: specific clean function for the valve in the equipment
+
+    analyze_func: specific analyze function for the valve in the equipment
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+            valve operating point is malfunctioning e.g. allow enough time for residue heat to
+            dissipate from the coil.
+
+    project_folder: name of path for the project and used to save the plots and csv data.
+
+    Returns
+    -------
+    None
+    """
+    results = []
+    # analyze valves
+    for idx, row in metadata.iterrows():
+        vlv_dat = dict(row)
+        try:
+            # clean data
+            vlv_df = clean_func(fetch_resp, row)
+
+            # analyze for passing valves
+            vlv_df, passing_type = analyze_func(vlv_df, row, th_bad_vlv, th_time, project_folder)
+
+        except:
+            import traceback
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            print("******Error try to debug")
+            print("{}: {}\n".format(exc_type, exc_value))
+            print(''.join(traceback.format_tb(exc_traceback)))
+            passing_type = dict()
+            import pdb; pdb.set_trace()
+            continue
+
+        if passing_type is None:
+            import pdb; pdb.set_trace()
+
+        vlv_dat.update(passing_type)
+        results.append(vlv_dat)
+
+    final_df = pd.DataFrame.from_records(results)
+
+    return final_df
+
+def detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, project_folder):
+    """
+    Main function that runs all the steps of the application
+
+    Parameters
+    ----------
+    query: dictionary containing query, sites, and qualify response
+
+    eval_start_time : start date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                      comfort evaluation period
+
+    eval_end_time : end date and time in format (yyyy-mm-ddTHH:MM:SSZ) for the thermal
+                    comfort evaluation period
+
+    window : aggregation window, in minutes, to average the raw measurement data
+
+    th_bad_vlv: temperature difference from long term temperature difference to consider an operating point as malfunctioning
+
+    th_time: length of time, in minutes, after the valve is closed to determine if 
+            valve operating point is malfunctioning e.g. allow enough time for residue heat to
+            dissipate from the coil. If two values are defined, the 1st is for reheat coils and the 2nd for ahu coils.
+
+    project_folder: name of path for the project and used to save the plots and csv data.
+
+    Returns
+    -------
+    None
+    """
+
+    # declare user hidden parameters
+    global long_term_fail   # number of minutes to trigger an long-term passing valve failure
+    global shrt_term_fail   # number of minutes to trigger an intermitten passing valve failure
+    global good_folder
+    global bad_folder
+    global sensor_fault_folder
+    global air_flow_folder
+    global csv_folder
+
+    # define user hidden parameters
+    long_term_fail = 5*60    # number of minutes to trigger an long-term passing valve failure
+    shrt_term_fail = 60      # number of minutes to trigger an intermitten passing valve failure
+    th_vlv_fail = 20         # equivalent percentage of valve open for determining failure.
+
+    # define container folders
+    good_folder = 'good_valves'         # name of path to the folder to save the plots of the correct operating valves
+    bad_folder = 'bad_valves'           # name of path to the folder to save the plots of the malfunction valves
+    sensor_fault_folder = 'sensor_fault'# name of path to the folder to save plots of equipment with sensor faults
+    air_flow_folder = 'air_flow_plots'  # name of path to the folder to save plots of the air flow values
+    csv_folder = 'csv_data'             # name of path to the folder to save detailed valve data
+
+    # check if holding folders exist
+    check_folder_exist(join(project_folder, bad_folder))
+    check_folder_exist(join(project_folder, good_folder))
+    check_folder_exist(join(project_folder, sensor_fault_folder))
+    check_folder_exist(join(project_folder, air_flow_folder))
+    check_folder_exist(join(project_folder, csv_folder))
+
+    # split length of time for vav and ahus
+    if isinstance(th_time, (list, tuple)):
+        if len(th_time) == 2:
+            th_time_vav = th_time[0]
+            th_time_ahu = th_time[1]
+        else:
+            th_time_vav = th_time[0]
+            th_time_ahu = th_time[0]
+    else:
+        th_time_vav = th_time
+        th_time_ahu = th_time
+
+    query = _query_and_qualify()
+    fetch_resp = _fetch(query, eval_start_time, eval_end_time, window)
+
+    # analyze VAV valves
+    vav_metadata = fetch_resp['vav'].view('dnstream_ta')
+    results_vav = _analyze(vav_metadata, fetch_resp['vav'], _clean_vav, _analyze_vlv, th_bad_vlv, th_time_vav, project_folder)
+
+    # analyze AHU valves
+    ahu_metadata = reformat_ahu_view(fetch_resp['ahu'])
+    results_ahu = _analyze(ahu_metadata, fetch_resp['ahu'], _clean_ahu, _analyze_ahu, th_bad_vlv, th_time_ahu, project_folder)
+
+    # clean report and save results
+    final_df = pd.concat([results_vav, results_ahu])
+    final_df = clean_final_report(final_df)
+    final_df.to_csv(join(project_folder, "passing_valve_results" + ".csv"))
+
+
+if __name__ == '__main__':
+    # Disable options
+    pd.options.mode.chained_assignment = None
+
+    # define parameters
+    eval_start_time  = "2018-07-01T00:00:00Z"
+    eval_end_time    = "2018-12-31T23:59:00Z"
+    window = 15
+    th_bad_vlv = 10
+    th_time = [12, 45]
+    project_folder = './with_airflow_checks_year_end'
+
+    # Run the app
+    detect_passing_valves(eval_start_time, eval_end_time, window, th_bad_vlv, th_time, project_folder)
