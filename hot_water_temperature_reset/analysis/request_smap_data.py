@@ -353,7 +353,8 @@ def convert_smap_to_pandas(smap_dat_arr, col_labels=None):
 
     df = []
     for i, dd in enumerate(smap_dat_arr):
-        df_timestamps = pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None)
+        # df_timestamps = pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific").tz_localize(None) # does not take into account daylight savings time change
+        df_timestamps = pd.to_datetime(dd[:, 0], unit='ms', utc=True).tz_convert("US/Pacific")
         if col_labels is not None:
             cur_df = pd.DataFrame(dd[:, 1], index=df_timestamps, columns=[col_labels[i]])
         else:
@@ -383,8 +384,8 @@ if __name__ == "__main__":
     plot_folder = "./figures"
 
     # time interval for to download data
-    start = dtutil.dt2ts(dtutil.strptime_tz("7-01-2022", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("11-02-2022", "%m-%d-%Y"))
+    start = dtutil.dt2ts(dtutil.strptime_tz("03-01-2023", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("05-31-2023", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
@@ -495,6 +496,26 @@ if __name__ == "__main__":
     air_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[air_zones, :], zn_temps_data, start, end, fig_file_air)
     rad_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[rad_zones, :], zn_temps_data, start, end, fig_file_rad, ylimits=(55,85))
 
+
+    #############################
+    ##### Return outdoor temperatures
+    #############################
+
+    # oa_temps = ["brick:Outside_Air_Temperature_Sensor"]
+    # oa_metadata = search_for_entities(g, "brick:AHU", oa_temps, relationship="brick:hasPoint")
+
+    # df_oa = []
+    # for t_unit in oa_metadata["entity"].unique():
+    #     df_oa.append(return_entity_points(g, t_unit, oa_temps))
+
+    # df_oa = pd.concat(df_oa).reset_index(drop=True)
+    # df_oa["bacnet_instance"] = df_oa["bacnet_instance"].astype(int).astype(str)
+
+    # oa_points_to_download, oa_data = get_data_from_smap(df_oa, paths, smap_client, start, end)
+
+    # # create plots
+    # fig_file = join(plot_folder, "oa_temps.html")
+    # oa_temps_plots = plot_multiple_entities(oa_points_to_download, oa_data, start, end, fig_file)
 
     #############################
     ##### Return pump speed status

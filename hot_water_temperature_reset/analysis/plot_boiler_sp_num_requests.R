@@ -28,27 +28,67 @@ fig_type <- 'graphical_abstract_grid'
 plot_type <- 'png'
 fig_size_factor <- 1/2
 
-select_dates <- ymd_hm(c('2021-12-01 16:00', '2021-12-03 09:00'))
-select_dates <- ymd_hm(c('2021-12-7 0:00', '2021-12-10 23:59'))
+dec_dates <- ymd_hm(c('2021-12-01 0:00', '2021-12-03 23:59'), tz='America/Los_Angeles')
+dec_plt_dates <- ymd_hm(c('2021-12-7 0:00', '2021-12-10 23:59'), tz='America/Los_Angeles')
+
+mar_dates <- ymd_hm(c('2022-03-01 0:00', '2022-03-31 23:59'), tz='America/Los_Angeles')
+mar_plt_dates <- ymd_hm(c('2022-03-14 0:00', '2022-03-17 23:59'), tz='America/Los_Angeles')
+
+month_dates <- dec_dates
+plt_dates <- dec_plt_dates
+
 ignore_req <- 2
 
 num_requests <- read_csv('./DATA/number_of_request.csv', 
                          col_names = c('req_num_fast_react', 'req_num_slow_react', 'Total Requests', 'Timestamp'),
                          ) %>%
   select(Timestamp, `Total Requests`) %>%
-  filter(Timestamp >= select_dates[1],
-         Timestamp <= select_dates[2])
+  mutate(Timestamp = ymd_hms(Timestamp, tz='America/Los_Angeles'))
   # rename(value = `number of request sent to fmu`) %>%
   # mutate(metric = 'number of requests',
   #        value = value*coeff,
   #        timestamp = mdy_hm(timestamp))
 
+## december average
+month_calc <- num_requests %>%
+  filter(Timestamp >= dec_dates[1],
+         Timestamp <= dec_dates[2]) %>%
+  mutate(total_minutes = c(NaN, diff(Timestamp)/60)) %>%
+  filter(!is.na(total_minutes))
+
+sum(month_calc$`Total Requests`*month_calc$total_minutes)/sum(month_calc$total_minutes)
+
+## march average
+month_calc <- num_requests %>%
+  filter(Timestamp >= mar_dates[1],
+         Timestamp <= mar_dates[2]) %>%
+  mutate(total_minutes = c(NaN, diff(Timestamp)/60)) %>%
+  filter(!is.na(total_minutes))
+
+sum(month_calc$`Total Requests`*month_calc$total_minutes)/sum(month_calc$total_minutes)
+
+## December plot average
+plot_calc <- num_requests %>%
+  filter(Timestamp >= dec_plt_dates[1],
+         Timestamp <= dec_plt_dates[2]) %>%
+  mutate(total_minutes = c(NaN, diff(Timestamp)/60)) %>%
+  filter(!is.na(total_minutes))
+
+sum(plot_calc$`Total Requests`*plot_calc$total_minutes)/sum(plot_calc$total_minutes)
+
+## March plot average
+plot_calc <- num_requests %>%
+  filter(Timestamp >= mar_plt_dates[1],
+         Timestamp <= mar_plt_dates[2]) %>%
+  mutate(total_minutes = c(NaN, diff(Timestamp)/60)) %>%
+  filter(!is.na(total_minutes))
+
+sum(plot_calc$`Total Requests`*plot_calc$total_minutes)/sum(plot_calc$total_minutes)
 
 boiler_setpoint_cdl_calc <- read_csv('./DATA/boiler_setpoint.csv',
                             col_names = c('Timestamp', 'New Controller Setpoint [K]')) %>%
-  mutate(`New G36 Controller Setpoint` = (`New Controller Setpoint [K]` - 273.15)*1.8 + 32) %>%
-  filter(Timestamp >= select_dates[1],
-         Timestamp <= select_dates[2]) %>%
+  mutate(`New G36 Controller Setpoint` = (`New Controller Setpoint [K]` - 273.15)*1.8 + 32,
+         Timestamp = ymd_hms(Timestamp, tz='America/Los_Angeles')) %>%
   pivot_longer(!Timestamp, names_to = "stream_names", values_to = "temps")
   
   # mutate(metric = 'boiler setpoint [F]',
@@ -57,24 +97,35 @@ boiler_setpoint_cdl_calc <- read_csv('./DATA/boiler_setpoint.csv',
   #        )
 
 
-boiler_temps_bacnet <- read_csv('./DATA/smap_boiler_temps.csv') %>%
+boiler_temps_bacnet <- read_csv('./DATA/dec_2021_smap_boiler_temps.csv') %>%
   rename(`Hot Water Supply` = `Field Bus1.Plant_Boilers.HWS-T`,
          `Hot Water Return` = `Field Bus1.Plant_Boilers.HWR-T`,
          `Boiler Supply Setpoint` = `Field Bus1.Plant_Boilers.HWS-TEffSetpnt`
          ) %>%
+  mutate(Timestamp = with_tz(Timestamp, 'America/Los_Angeles')) %>%
   pivot_longer(!Timestamp, names_to = "stream_names", values_to = "temps") %>%
-  drop_na(temps) %>%
-  filter(Timestamp >= select_dates[1],
-         Timestamp <= select_dates[2])
+  drop_na(temps)
 
+## plot average
+plt_boil_temps <- boiler_temps_bacnet %>%
+  filter(Timestamp >= plt_dates[1],
+         Timestamp <= plt_dates[2]) %>%
+  group_by(stream_names) %>%
+  summarise(temps = mean(temps))
+
+plt_boil_temps
+# convert to SI
+unlist(lapply(plt_boil_temps$temps, IPtoSI_temp_conversion))
 
 # Request Plot
 req_plot <- num_requests %>%
+  filter(Timestamp >= plt_dates[1],
+         Timestamp <= plt_dates[2]) %>%
   ggplot(., aes(Timestamp, `Total Requests`)) +
   fig_format[[fig_type]][["fig_format"]] +
-  geom_step(size=1.25*fig_size_factor, color='#3ed579') +
-  geom_hline(yintercept=ignore_req, size=1.5*fig_size_factor, linetype='dashed', color='#d5793e') +
-  annotate('text', x=num_requests$Timestamp[as.integer(200*fig_size_factor)], y=ignore_req+.3, label='Ignored Requests', size=6*fig_size_factor, color='#d5793e') +
+  geom_step(linewidth=1.25*fig_size_factor, color='#3ed579') +
+  geom_hline(yintercept=ignore_req, linewidth=1.5*fig_size_factor, linetype='dashed', color='#d5793e') +
+  annotate('text', x=plt_dates[1] + hours(4), y=ignore_req+.7, label='Ignored Requests', size=6*fig_size_factor, color='#d5793e') +
   theme(axis.title.x=element_blank()) +
   scale_x_datetime(date_breaks = "1 day", labels=date_format("%b %d")) +
   scale_y_continuous(breaks = seq(1,10))
@@ -107,20 +158,22 @@ line_type <- c('Hot Water Supply'  = 'solid',
                 'New G36 Controller Setpoint' = 'dashed')
 
 temp_plot <- bind_rows(boiler_temps_bacnet, boiler_setpoint_cdl_calc) %>%
-  filter(stream_names != 'New Controller Setpoint [K]') %>%
-  ggplot(., aes(Timestamp, temps, colour = stream_names, linetype=stream_names, size=stream_names)) +
+  filter(stream_names != 'New Controller Setpoint [K]',
+         Timestamp >= plt_dates[1],
+         Timestamp <= plt_dates[2]) %>%
+  ggplot(., aes(Timestamp, temps, colour = stream_names, linetype=stream_names, linewidth=stream_names)) +
   fig_format[[fig_type]][["fig_format"]] +
   geom_step() +
   theme(axis.title.x=element_blank(),
         axis.text.x = element_blank()) +
   scale_y_continuous(
-    name = "Temperature [°F]",
+    name = "Temperature [Â°F]",
     breaks = seq(70, 150, 20),
-    sec.axis = sec_axis(~ IPtoSI_temp_conversion(.), name='[°C]')
+    sec.axis = sec_axis(~ IPtoSI_temp_conversion(.), name='[Â°C]')
   ) +
   scale_x_datetime(date_breaks = "1 day", labels=date_format("%b %d")) +
   scale_colour_manual(values=line_color, limits=names(line_color)) +
-  scale_size_manual(values=line_width, limits=names(line_width)) +
+  scale_linewidth_manual(values=line_width, limits=names(line_width)) +
   scale_linetype_manual(values=line_type, limits=names(line_type)) +
   theme(legend.title=element_blank())
 
@@ -137,11 +190,11 @@ ggsave(paste(fig_folder, paste0(fig_filename, '.', plot_type), sep='/'), temp_pl
 
 #Combine plots with cowplot
 library(cowplot)
-combine_plot <- plot_grid(temp_plot, req_plot, align='v', ncol=1, rel_heights = c(3,1))
+combine_plot <- plot_grid(temp_plot, req_plot, align='v', ncol=1, rel_heights = c(1.6,1.07))
 
 fig_filename = 'boiler_temps_combined'
 ggsave(paste(fig_folder, paste0(fig_filename, '.', plot_type), sep='/'), combine_plot,
-       device=plot_type, dpi=600, width=fig_width, height=3.3+2.2)
+       device=plot_type, dpi=600, width=7, height=2)
 
 
 
