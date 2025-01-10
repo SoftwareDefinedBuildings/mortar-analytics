@@ -266,7 +266,7 @@ class ControlledBoiler(object):
         """
         if self._debug: print(f"[{pd.Timestamp.now()}] Starting to determine hotter water requests for fast reacting units.\n")
 
-        quick_consumers = self.hw_consumers.loc[~self.hw_consumers.loc[:, "htm"], :]
+        quick_consumers = self.hw_consumers.loc[~self.hw_consumers.loc[:, "htm"].astype(bool), :]
         threshold_position = 95.0
 
         req_count = 0
@@ -423,7 +423,7 @@ class ControlledBoiler(object):
         if any(qudt_units):
             df = df.loc[qudt_units, :]
         else:
-            df.loc[~qudt_units, "val_unit"] = None
+            df.loc[~qudt_units.astype(bool), "val_unit"] = None
 
         df = df.drop_duplicates(subset=['point_name']).reset_index(drop=True)
 
@@ -462,7 +462,7 @@ class ControlledBoiler(object):
         if any(qudt_units):
             df = df.loc[qudt_units, :]
         else:
-            df.loc[~qudt_units, "val_unit"] = None
+            df.loc[~qudt_units.astype(bool), "val_unit"] = None
 
         status_entities = {
             "Heating_Start_Stop_Status": True,

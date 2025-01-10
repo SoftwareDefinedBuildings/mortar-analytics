@@ -3,4 +3,5 @@ model_update_rate: 300
 web_api_port: 5000
 brick_file: dbc_brick_expanded.ttl
 bacnet_init_file: bacnet_and_data/BACnet_init_temp_reset.ini
-
+randomized_ctrl_sch: block_3_schedule_DBC.csv
+default_ctrl_strategy: g36

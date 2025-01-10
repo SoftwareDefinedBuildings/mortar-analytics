@@ -5,6 +5,7 @@ import numpy as np
 import asyncio
 import brickschema
 import logging, sys
+from datetime import date
 
 import bacnet_and_data.readWriteProperty as BACpypesAPP
 from bacnet_and_data.ControlledBoiler import ControlledBoiler as Boiler
@@ -43,15 +44,16 @@ class Boiler_Controller:
 
         self._default_setpoint = self.config.get('default_setpoint')
 
-        self.fmu_file = self.config.get('fmu_file')
-        self.boiler = load_fmu(self.fmu_file)
         self.prev_calc_boiler_setpoint = None
-
-        self.model_options = self.boiler.simulate_options()
-        self.model_options['initialize'] = True
+        self.fmu_file = self.config.get('fmu_file')
         self._model_update_rate = self.config.get('model_update_rate', 300)
-        self.model_options['CVode_options']['rtol'] = 1e-6
-        self.model_options['CVode_options']['atol'] = 1e-8
+
+        # randomized control experiment setup
+        self.randomized_ctrl_sch_file = self.config.get('randomized_ctrl_sch', None)
+        self.default_ctrl_strategy = self.config.get('default_ctrl_strategy', 'g36')
+        self.randomized_ctrl_sch = None
+        self.processed_ctrl_sch = False
+        self.initialize_ctrl_sch()
 
         # brick model setting
         self.brick_file = self.config.get('brick_file')
@@ -62,8 +64,7 @@ class Boiler_Controller:
         self.load_brick_model()
         self.initialize_bacnet_comm()
         self.initialize_bldg_boilers()
-
-        self.initialize_boiler_cdl()
+        self.prev_ctrl_type = None
 
         # self.app = Flask('boiler_controller')
         # self.app.add_url_rule('/get_data', 'get_data', self.get_readings)
@@ -72,8 +73,27 @@ class Boiler_Controller:
         self.loop = asyncio.get_event_loop()
         self.schedule_tasks()
 
+    def initialize_ctrl_sch(self):
+        # process ctrl sch
+        if self.randomized_ctrl_sch_file is not None:
+            self.randomized_ctrl_sch = pd.read_csv(self.randomized_ctrl_sch_file)
+            self.randomized_ctrl_sch['strategy'].loc[self.randomized_ctrl_sch['strategy'].isin([1])] = 'baseline'
+            self.randomized_ctrl_sch['strategy'].loc[self.randomized_ctrl_sch['strategy'].isin([2])] = 'g36'
+
+            # make dates the index for quick selections
+            self.randomized_ctrl_sch = self.randomized_ctrl_sch.set_index('date')
+            self.processed_ctrl_sch = True
+            ctrl_strategies = np.unique(self.randomized_ctrl_sch['strategy'])
+            if _debug: logger.info(f"[{pd.Timestamp.now()}] Initialized randomized control schedule with strategies {ctrl_strategies}\n")
+
 
     def initialize_boiler_cdl(self):
+        self.boiler = load_fmu(self.fmu_file)
+        self.model_options = self.boiler.simulate_options()
+        self.model_options['initialize'] = True
+        self.model_options['CVode_options']['rtol'] = 1e-6
+        self.model_options['CVode_options']['atol'] = 1e-8
+
         boiler_inputs = self.get_current_state()
 
         # boiler_inputs_SI_units = self.convert_units(boiler_inputs)
@@ -105,7 +125,7 @@ class Boiler_Controller:
         latest_boiler_setpoint = round(self.boiler.get('TPlaHotWatSupSet')[0], 2)
         self.prev_calc_boiler_setpoint = latest_boiler_setpoint
         logger.info(f"[{pd.Timestamp.now()}] Initialized boiler setpoint {latest_boiler_setpoint} K ({self.convert_K_to_degF(latest_boiler_setpoint)} degF)")
-        self.current_time = 30
+        self.cdl_sim_time = 30
 
 
     def load_brick_model(self):
@@ -283,41 +303,76 @@ class Boiler_Controller:
 
         return new_status
 
+    def run_cdl_temperature_reset(self, boiler_values):
+        logger.info(f"[{pd.Timestamp.now()}] CDL simulation time == {self.cdl_sim_time}")
+        start = self.cdl_sim_time
+        end = self.cdl_sim_time + self._model_update_rate
+        pumps_enabled = boiler_values.get('boiler_status')
+        num_requests = boiler_values.get('num_requests')
+        inputs = (
+                #change input variables below
+                ['uStaCha', 'uHotWatPumSta[1]', 'uHotWatPumSta[2]', 'nHotWatSupResReq', 'uTyp[1]', 'uCurStaSet'],
+                np.array(
+                    [[start, False, pumps_enabled, pumps_enabled, num_requests, 1, 1],
+                    [end, False, pumps_enabled, pumps_enabled, num_requests, 1, 1]]
+                )
+            )
+        self.boiler.simulate(start, end, inputs, options=self.model_options)
+        self.cdl_sim_time = self.cdl_sim_time + self._model_update_rate
+        boiler_setpoint = round(self.boiler.get('TPlaHotWatSupSet')[0], 2)
+
+        return boiler_setpoint
+
+
+    def get_control_type(self):
+        control_type = self.default_ctrl_strategy
+        if self.processed_ctrl_sch:
+            # get control type based on day
+            cur_date = date.today().strftime("%Y-%m-%d")
+            control_type = self.randomized_ctrl_sch.loc[cur_date, 'strategy']
+        else:
+            # initialize randomized schedule
+            self.initialize_ctrl_sch()
+
+        # initialize G36 controls if switch from baseline
+        if control_type == 'g36':
+            if self.prev_ctrl_type is None or self.prev_ctrl_type != control_type:
+                self.initialize_boiler_cdl()
+
+        self.prev_ctrl_type = control_type
+        return control_type
+
+
+    def get_baseline_control_sp(self):
+        # return constant setpoint for baseline control
+        return self.convert_degF_to_K(130) # must be in Kelvin
+
 
     async def _periodic_advance_time(self):
         while True:
-            logger.info(f"[{pd.Timestamp.now()}] current time == {self.current_time}")
+            logger.info(f"[Current time is == {pd.Timestamp.now()}]")
             boiler_values = self.get_current_state()
             current_boiler_sp = boiler_values.get('current_boiler_setpoint')
+            control_type = self.get_control_type()
 
             #TODO: When closing the loop, simulated boiler status to boiler_values.get('boiler_status')
 
             # pumps_enabled = self.simulate_boiler_status(self.sim_boiler_status)
             pumps_enabled = boiler_values.get('boiler_status')
             if pumps_enabled:
-                start = self.current_time
-                end = self.current_time + self._model_update_rate
-                inputs = (
-                        #change input variables below
-                        ['uStaCha', 'uHotWatPumSta[1]', 'uHotWatPumSta[2]', 'nHotWatSupResReq', 'uTyp[1]', 'uCurStaSet'],
-                        np.array(
-                            [[start, False, pumps_enabled, pumps_enabled, boiler_values.get('num_requests'), 1, 1],
-                            [end, False, pumps_enabled, pumps_enabled, boiler_values.get('num_requests'), 1, 1]]
-                        )
-                    )
-                self.boiler.simulate(start, end, inputs, options=self.model_options)
-                self.current_time = self.current_time + self._model_update_rate
-                latest_boiler_setpoint = round(self.boiler.get('TPlaHotWatSupSet')[0], 2)
+                if control_type == 'g36':
+                    latest_boiler_setpoint = self.run_cdl_temperature_reset(boiler_values)
+                elif control_type == 'baseline':
+                    latest_boiler_setpoint = self.get_baseline_control_sp()
+
                 self.prev_calc_boiler_setpoint = latest_boiler_setpoint
             else:
                 logger.info(f"[{pd.Timestamp.now()}] Boiler is disabled will use last setpoint= {self.prev_calc_boiler_setpoint}")
                 latest_boiler_setpoint = self.prev_calc_boiler_setpoint
 
-
             logger.info(f"[{pd.Timestamp.now()}] Current Boiler Status = {pumps_enabled}")
             logger.info(f"[{pd.Timestamp.now()}] new hot water setpoint {latest_boiler_setpoint} K ({self.convert_K_to_degF(latest_boiler_setpoint)} degF)")
             self.save_new_setpoint_file(latest_boiler_setpoint)
-
 
             # return latest_boiler_setpoint <<<---- CARLOS: use this to generate setpoint 
             ## TODO: self.set_boiler_setpoint(latest_boiler_setpoint (F))
