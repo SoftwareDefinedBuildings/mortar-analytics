@@ -142,7 +142,8 @@ def return_entity_points(g, entity, point_list):
 def get_paths_from_tags(tags):
     paths = {key: tags[key]["Path"] for key in tags}
     paths = pd.DataFrame.from_dict(paths, orient='index', columns=['path'])
-    new_cols = ["empty", "site", "bms", "bacnet_instance", "bms2", "point_name"]
+    # new_cols = ["empty", "site", "bms", "bacnet_instance", "bms2", "point_name"] ## old path implementation
+    new_cols = ["empty", "site", "bacnet_device", "point_name", "bacnet_instance", "property_name"] ## new path implementation
 
     # adjustments to dataframe
     paths[new_cols] = paths.path.str.split("/", expand=True)
@@ -152,6 +153,30 @@ def get_paths_from_tags(tags):
 
 
 def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=None, ylimits=None):
+
+    # MERGE duplicate data from same path but different uuids
+    df_grps = metadata.groupby(by=['path'])
+    df_dups = metadata.duplicated(subset = ['path'], keep='first')
+    df_uniq = metadata.loc[~df_dups, :]
+
+    for grp_key in df_grps.groups.keys():
+        cur_grp = df_grps.get_group(grp_key)
+        cur_index = cur_grp.index.values
+
+        merge_dat = data[cur_index[0]]
+        for dt_idx in cur_index[1:]:
+            cur_dat = data[dt_idx]
+
+            if len(cur_dat) > 0:
+                merge_dat = np.concatenate((merge_dat, cur_dat), axis=0)
+
+        remain_idx = df_uniq.loc[df_uniq['index'].isin(cur_grp['index']), :].index.values
+
+        # sort merged data set and save
+        sort_idx = np.argsort(merge_dat[:, 0])
+        data[remain_idx[0]] = merge_dat[sort_idx]
+    
+    metadata = df_uniq
 
     plots = []
     for ii, point_type in enumerate(metadata['req_point'].unique()):
@@ -180,6 +205,7 @@ def plot_multiple_entities(metadata, data, start, end, filename, exclude_str=Non
         p.add_layout(Legend(), 'right')
 
         in_data = metadata["req_point"].isin([point_type])
+
         in_data_index = in_data[in_data].index
         df_subset = [data[x] for x in in_data_index]
 
@@ -384,8 +410,8 @@ if __name__ == "__main__":
     plot_folder = "./figures"
 
     # time interval for to download data
-    start = dtutil.dt2ts(dtutil.strptime_tz("03-01-2023", "%m-%d-%Y"))
-    end   = dtutil.dt2ts(dtutil.strptime_tz("05-31-2023", "%m-%d-%Y"))
+    start = dtutil.dt2ts(dtutil.strptime_tz("12-01-2024", "%m-%d-%Y"))
+    end   = dtutil.dt2ts(dtutil.strptime_tz("03-31-2025", "%m-%d-%Y"))
 
     # initiate smap client and download tags
     smap_client = SmapClient(url, key=keyStr)
@@ -401,7 +427,6 @@ if __name__ == "__main__":
     # query hot water consumers and clean metadata
     df_hw_consumers = _query_hw_consumers(g)
     df_hw_consumers = _clean_metadata(df_hw_consumers)
-
 
     #############################
     ##### Return hw consumer ctrl points
@@ -581,3 +606,26 @@ if __name__ == "__main__":
     # create plots
     fig_file = join(plot_folder, "hp_heating_status.html")
     hp_status_plots = plot_multiple_entities(hp_points_to_download, hp_data, start, end, fig_file)
+
+    # #############################
+    # ##### CO2 Sensors
+    # #############################
+
+    # zone_temps = ["brick:CO2_Sensor"]
+
+    # df_zone_temps = []
+    # for zn in df_hw_consumers["room_space"]:
+    #     df_zone_temps.append(return_entity_points(g, zn, zone_temps))
+
+    # import pdb; pdb.set_trace()
+    # df_zone_temps = pd.concat(df_zone_temps).reset_index(drop=True)
+    # df_zone_temps["bacnet_instance"] = df_zone_temps["bacnet_instance"].astype(int).astype(str)
+
+    # # download data from smap
+    # # TODO: there is a value error when cache is set to true
+    # zn_temps_to_download, zn_temps_data = get_data_from_smap(df_zone_temps, paths, smap_client, start, end)
+
+    # # create plots
+
+    # fig_file_air = join(plot_folder, "co2_zone.html")
+    # air_zone_temps_plots = plot_multiple_entities(zn_temps_to_download.loc[air_zones, :], zn_temps_data, start, end, fig_file_air)
