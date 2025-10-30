@@ -56,7 +56,7 @@ class SaveBacnetPoints(object):
             for ids, row in self.bacnet_info.iterrows():
                 sensor_id = int(row["bacnet_instance"])
                 sensor_name = str(row["point_name"]).split("#")[-1]
-                sensor_unit = str(row["unit"]).split("/")[-1]
+                sensor_unit = str(row["val_unit"]).split("/")[-1]
 
                 sensor_records[str(sensor_id)] = {
                     "name": sensor_name,
