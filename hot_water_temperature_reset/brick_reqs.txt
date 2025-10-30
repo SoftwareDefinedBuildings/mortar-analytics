@@ -1,13 +1,7 @@
 brickschema
 brickschema[reasonable]
+brickschema[persistence]
 bacpypes
 ConfigParser
+PyYAML
 pandas
-numpy
-matplotlib
-scipy
-spicy
-lxml
-Cython
-pytest
-setuptools
